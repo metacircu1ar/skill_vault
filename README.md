@@ -14,13 +14,16 @@ The Markdown files in [`skills/`](skills/) document reusable workflows for advis
 
 ### Product delivery skills
 
-[`skills/product-delivery-skills/`](skills/product-delivery-skills/) contains three self-contained, installable skills:
+[`skills/product-delivery-skills/`](skills/product-delivery-skills/) contains four self-contained, installable skills:
 
 | Skill | Purpose |
 | --- | --- |
 | [`product-implementation-planner`](skills/product-delivery-skills/product-implementation-planner/SKILL.md) | Turn a product description and repository evidence into a phased implementation plan. |
+| [`product-plan-compiler`](skills/product-delivery-skills/product-plan-compiler/SKILL.md) | Compile a detailed product plan into formal models, run relevant provers and model checkers, and refine inconsistencies before implementation. |
 | [`parallel-plan-implementation`](skills/product-delivery-skills/parallel-plan-implementation/SKILL.md) | Implement an approved plan through controlled, dependency-aware parallel phases. |
 | [`phase-commit-reviewer`](skills/product-delivery-skills/phase-commit-reviewer/SKILL.md) | Perform a read-only, phase-aware review of one implementation commit. |
+
+The default delivery sequence is `product-implementation-planner` → `product-plan-compiler` → `parallel-plan-implementation` → `phase-commit-reviewer`.
 
 Each product-delivery skill includes its supporting references, templates, schemas, scripts, and a dedicated README.
 
