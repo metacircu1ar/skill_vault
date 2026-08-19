@@ -1,0 +1,42 @@
+# Product Implementation Planner
+
+An Agent Skill that turns a rough product idea, PRD, requirements document, or existing repository into a complete production-grade architecture and phased implementation plan under `docs/implementation-plan/`.
+
+## Embedded complete-description comment
+
+The source `SKILL.md` begins with a `COMPLETE SKILL DESCRIPTION` HTML comment that explains the full intake, clarification, architecture-planning, validation, approval, and implementation-handoff lifecycle. The shorter YAML `description` remains optimized for skill discovery and activation.
+
+## Workflow
+
+1. Obtain or normalize the product description.
+2. Ask a tailored set of principal architecture questions, including hosting/operating model when unresolved.
+3. Classify unknowns as blocking, decision-gated, or non-blocking.
+4. Produce coordinated product, architecture, data, interface, security, operations, testing, delivery, and component plans.
+5. Assign stable requirement, decision, component, phase, and boundary identifiers.
+6. Validate dependency types, write domains, shared-state constraints, and candidate parallel waves.
+7. Ask whether implementation should proceed with `parallel-plan-implementation`.
+
+The planner remains planning-only until the user explicitly approves implementation.
+
+## Delivery companions
+
+- `parallel-plan-implementation` executes the validated plan with contract-first boundaries, isolated worktrees, and one traceable commit per phase.
+- `phase-commit-reviewer` powers the optional fresh-agent review of each phase commit after implementation is fully integrated, buildable, and passing.
+
+Implementation and review have separate approval gates. Approving implementation does not automatically authorize reviewer dispatch, fixes, or history reconstruction.
+
+## Requested delivery profiles
+
+- Main agent: `gpt-5.6-sol` / `ultra`
+- Implementor agents: `gpt-5.6-terra` / `xhigh`
+- Reviewer agents: `gpt-5.6-sol` / `xhigh`
+
+The host controls model availability. Requested and actual profiles are recorded, and substitutions require explicit user approval.
+
+## Validation
+
+```bash
+python3 <skill-root>/scripts/validate_plan.py <repository-root>
+```
+
+The validator checks required documents and sections, stable identifiers, component phases, dependency classifications, traceability, decision gates, boundary candidates, write domains, and preliminary parallel waves.
