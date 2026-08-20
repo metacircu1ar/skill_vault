@@ -4,13 +4,28 @@
 
 # Skill Vault
 
-A personal collection of agent skills, workflow references, delivery playbooks, and focused audit checklists for AI coding agents.
+A personal collection of agent skills, workflow references, multi-agent coordination protocols, delivery playbooks, and focused audit checklists for AI coding agents.
 
 ## Contents
 
 ### Workflow references
 
 The Markdown files in [`skills/`](skills/) document reusable workflows for advising, batch changes, code review, deep research, goal-driven execution, verifier generation, localization, simplification, and testable frontends.
+
+### Agent coordination skills
+
+[`skills/code-review-loop/`](skills/code-review-loop/) contains a shared two-role skill for running an iterative implementation and code-review handshake between two agents working in the same repository.
+
+| Skill | Purpose |
+| --- | --- |
+| [`code-review-loop`](skills/code-review-loop/SKILL.md) | Coordinate an `implementor` and persistent `reviewer` through session-isolated frozen-diff cycles, `NO_FINDINGS` phase boundaries, and implementor-controlled completion; the protocol includes [TLA+ state-machine verification](skills/code-review-loop/verification/README.md). |
+
+Invoke the same skill on both agents with the appropriate role:
+
+```text
+/code-review-loop implementor
+/code-review-loop reviewer
+```
 
 ### Product delivery skills
 
@@ -50,6 +65,7 @@ Each product-delivery skill includes its supporting references, templates, schem
 Clone the repository and copy the skill or reference you need into the directory expected by your agent runtime:
 
 ```text
+skills/code-review-loop/SKILL.md
 skills/product-delivery-skills/<skill-name>/SKILL.md
 skills/audit/<skill-name>/SKILL.md
 ```
@@ -57,8 +73,10 @@ skills/audit/<skill-name>/SKILL.md
 ## Repository layout
 
 ```text
-skills/                         Workflow references and skill material
-skills/audit/                   Focused audit skills
+skills/                          Workflow references and skill material
+skills/code-review-loop/         Two-agent implementation/review coordination skill
+skills/code-review-loop/verification/  TLA+ model, checks, and reproducibility notes
+skills/audit/                    Focused audit skills
 skills/product-delivery-skills/  Self-contained product-delivery skills
-LICENSE                         MIT license
+LICENSE                          MIT license
 ```
