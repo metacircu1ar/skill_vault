@@ -1,9 +1,9 @@
 ---
 name: product-plan-compiler
-description: Use this skill after a detailed product or system plan exists—especially one produced by product-implementation-planner—to extract a traceable formal domain model, select and implement checks in Alloy, SMT, TLA+/TLC/Apalache/TLAPS, Lean, or Rocq, run the native tools, and refine the plan and formalization until they agree before implementation.
-compatibility: "Requires a filesystem-enabled coding agent that can read and update planning documents and execute at least one selected formal backend for checked claims. Python 3 can run the bundled fallback example but does not replace native verification. Intended upstream: `product-implementation-planner`; intended downstream: `parallel-plan-implementation`."
+description: Use this skill after a detailed product or system plan exists—especially one produced by product-implementation-planner—to extract a traceable formal domain model, select a complementary verification portfolio across Alloy, SMT, TLA+/TLC/Apalache/TLAPS, Lean, Rocq, or Arend, run the native tools, challenge external-system abstractions, and refine the plan and formalization until they agree before implementation.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
+  compatibility: "Requires a filesystem-enabled coding agent that can read and update planning documents and execute the native backends selected for checked claims. Missing tooling remains an explicit scoped gap; a fallback does not replace native verification. Intended upstream: `product-implementation-planner`; intended downstream: `parallel-plan-implementation`."
   upstream-skill: product-implementation-planner
   downstream-skill: parallel-plan-implementation
   reviewer-skill: phase-commit-reviewer
@@ -11,8 +11,8 @@ metadata:
 ---
 <!--
 COMPLETE SKILL DESCRIPTION
-This planning-verification skill compiles a detailed product plan into a traceable formal intermediate representation and one or more executable prover or model-checker programs. It verifies the product domain—not merely the agents that authored the plan—by modeling entities, relations, lifecycles, operations, permissions, failures, concurrency, safety, liveness, and other plan rules.
-It selects backends by obligation, including Alloy, SMT, TLA+/TLC/Apalache/TLAPS, Lean, and Rocq; runs the native tools; preserves commands, versions, bounds, assumptions, and traces; and translates every counterexample or failed proof obligation back into the language and requirement IDs of the source plan.
+This planning-verification skill compiles a detailed product plan into a traceable formal intermediate representation and an obligation-driven portfolio of executable prover or model-checker programs. It verifies the product domain—not merely the agents that authored the plan—by modeling entities, relations, lifecycles, operations, permissions, failures, concurrency, safety, liveness, and other plan rules.
+It selects complementary backends by obligation, including Alloy, SMT, TLA+/TLC/Apalache/TLAPS, Lean, Rocq, and Arend; runs the native tools; preserves commands, versions, bounds, assumptions, and traces; and translates every counterexample or failed proof obligation back into the language and requirement IDs of the source plan. It treats formal environment abstractions and test doubles as claims that require real-system evidence, not as evidence merely because they agree with one another.
 The skill iteratively classifies defects in the plan, model, property, assumptions, bounds, or encoding, changes one layer at a time, and reruns affected checks plus regression, witness, non-vacuity, and mutation checks. Semantic plan changes require an explicit product decision and are never hidden inside a passing model.
 Its normal upstream is `product-implementation-planner`. It remains planning-only, writes verification artifacts under `docs/implementation-plan/formal-verification/`, and offers an explicit handoff to `parallel-plan-implementation` only after the plan, IR, formal programs, properties, assumptions, bounds, and native results converge for the documented scope.
 -->
@@ -48,7 +48,7 @@ This skill may revise planning documents only through explicit, traceable produc
 Given a detailed plan:
 
 1. Extract a precise, traceable formal model.
-2. Select one or more suitable formal systems.
+2. Classify obligations and select the smallest complementary portfolio that covers their distinct evidence needs.
 3. Implement executable/checkable specifications.
 4. Run the native checker or prover.
 5. Explain every failure in the vocabulary of the original plan.
@@ -127,9 +127,11 @@ Extract at least:
 - concurrency, retries, idempotency, and ordering constraints;
 - deletion, archival, retention, and referential-integrity rules;
 - quantitative constraints and resource bounds;
-- environmental assumptions and explicit abstractions.
+- environmental assumptions and explicit abstractions, including the evidence and unknowns behind material external-system behavior.
 
 Every formal item must cite one or more plan requirement IDs, or be labeled `derived`, `assumption`, or `verification-only`.
+
+Before selecting tools, make a claim-to-evidence inventory: for each critical normative claim, record its quantification, the evidence mode it needs, whether it is included, and the IR items that encode it. This prevents a single-tool portfolio from appearing complete merely because incompatible claims were omitted.
 
 ### 3. Perform consistency checks before choosing a prover
 
@@ -147,9 +149,13 @@ Check the IR for obvious defects:
 
 Do not treat this review as formal verification. It prepares the formalization.
 
+### 3a. Audit external-system evidence
+
+When the model depends on behavior controlled by another system, read `references/verification-portfolio-and-environment-fidelity.md`. Trace each material premise to the planner's external-system dossier or record an `ASSUMPTION_GAP`. A mock, fixture, generated client, current wrapper, or plan-authored schema is not independent provider evidence. Model unknown outcomes conservatively and carry a runtime characterization or adapter-conformance gate into implementation. Do not make external writes merely to complete formalization.
+
 ### 4. Choose the verification backend by obligation
 
-Use the smallest faithful combination, not a favorite tool by default.
+Classify obligations before inspecting installed tools. Use the smallest faithful combination, not a favorite tool or an arbitrary tool-count target.
 
 | Obligation | Preferred system | Typical result |
 |---|---|---|
@@ -157,10 +163,11 @@ Use the smallest faithful combination, not a favorite tool by default.
 | Arithmetic, scheduling, permissions, policy constraints, satisfiability | SMT solver such as Z3 or cvc5 | `sat`, model, `unsat`, optional unsat core |
 | Lifecycles, workflows, concurrency, retries, distributed behavior | TLA+ with TLC or Apalache | State trace or checked invariant/property |
 | Mechanically checked TLA+ proof | TLAPS | Checked proof obligations |
-| Unbounded inductive theorem, refinement, executable definitions | Lean | Kernel-checked theorem |
-| Unbounded inductive theorem, dependent specification, extraction | Rocq Prover (formerly Coq) | Kernel-checked theorem; optional extraction |
+| Unbounded inductive/dependent theorem, refinement, or certified definition | Lean, Rocq Prover (formerly Coq), or Arend | Kernel/type-checked theorem; optional extraction where supported |
 
-A product can require multiple backends. Keep one shared IR and one traceability matrix.
+A product can require multiple backends. Select more than one when critical claims require materially different evidence modes—for example relational structure, temporal interleavings, and an unbounded inductive or refinement theorem. Multiple tools count only when each owns a distinct claim, removes a material bound, checks a genuinely different abstraction, or provides an independent cross-check. Re-encoding the same bounded model merely to increase the tool count adds little assurance.
+
+One backend is acceptable when the critical scope is genuinely homogeneous; record why. If a critical claim is intended to hold for arbitrary cardinalities, values, or inductive structures, a bounded Alloy, TLC, Apalache, or finite SMT run does not discharge it: add an unbounded proof obligation in TLAPS, Lean, Rocq, Arend, or an adequate deductive encoding, or record an explicit `BOUND_GAP`. Tool availability alone is not a selection rationale.
 
 ### 5. Write explicit verification obligations
 
@@ -176,10 +183,14 @@ At minimum, add:
 8. **Concurrency checks:** when concurrent execution is allowed, explore relevant interleavings.
 9. **Liveness:** where the plan says "eventually", state fairness and environmental assumptions.
 10. **Mutation sanity:** weaken or negate at least one important rule and confirm the checker can detect the defect.
+11. **Portfolio coverage:** every included critical claim has an evidence mode and suitable backend, or an explicit gap.
+12. **Environment fidelity:** every material external premise has evidence, conservative uncertainty, or an unresolved assumption plus a runtime conformance gate.
 
 ### 6. Implement the model
 
 Prefer a minimal domain model that preserves the relevant semantics. Abstract implementation details that cannot affect the property, but document every abstraction.
+
+For an external-system abstraction, record the represented and omitted outcomes, evidence provenance, confidence, provider version, and invalidation trigger. A formal proof establishes consequences of that abstraction; it does not prove that the real provider satisfies the premise.
 
 Never silently strengthen the plan to make verification pass. Never delete or weaken a failing property without recording a plan decision.
 
@@ -244,6 +255,8 @@ For each iteration:
 
 When a plan rule changes, produce a precise replacement statement suitable for insertion into the plan. A checker-generated repair is a proposal, not an accepted product decision: apply semantic plan changes only when the product owner or governing plan explicitly authorizes them. Model, property, assumption, and bound corrections must still be recorded and reviewed.
 
+When new provider evidence changes an assumption, update the external-system dossier first. Use `refinement-ledger.md` to record the transition, invalidated models/runs/contracts, and required reruns; the ledger is history, not the current provider specification.
+
 ### 10. Stop only at the convergence gate
 
 The verification cycle is complete only when:
@@ -256,6 +269,9 @@ The verification cycle is complete only when:
 - important properties pass non-vacuity and mutation sanity checks;
 - the plan, IR, model, and traceability matrix describe the same rules;
 - the report distinguishes bounded checks from unbounded proofs;
+- every critical claim's required evidence mode is covered by a suitable backend or an explicit accepted gap;
+- every critical universal claim has unbounded evidence or an explicit `BOUND_GAP`;
+- material external assumptions are evidence-linked or explicitly unresolved, with runtime conformance work carried into implementation;
 - a human/domain owner has reviewed model fidelity.
 
 Record one scoped status in `verification-report.md`: `Blocked`, `In refinement`, `Agreement reached — bounded`, `Agreement reached — proved`, or `Agreement reached — mixed`. Never use an unqualified claim such as "the product is proven correct."
@@ -282,6 +298,8 @@ Use exact claims:
 
 - A prover checks the formal model, not the prose directly.
 - A faithful model can still omit an unstated requirement.
+- Several tools can repeat the same mistranslated rule or external-system assumption; tool diversity does not replace fidelity review.
+- A mock or generated client is not evidence of provider behavior merely because tests pass against it.
 - Passing a bounded check is not an unbounded proof.
 - An over-constrained model can pass vacuously.
 - Liveness depends critically on fairness and environment assumptions.
@@ -290,4 +308,4 @@ Use exact claims:
 
 ## Package references
 
-Read `README.md` for the full pipeline and worked example. Start new projects from the templates for the normalized plan, formal IR, traceability matrix, open questions, run result, refinement ledger, and verification report under `templates/`.
+Read `README.md` for the full pipeline and worked example. Read `references/verification-portfolio-and-environment-fidelity.md` before choosing backends or trusting a material external-system abstraction. Start new projects from the templates under `templates/`.
