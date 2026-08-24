@@ -1,9 +1,9 @@
 ---
 name: parallel-plan-implementation
-description: Implements a validated product plan through contract-first boundaries, evidence-backed external adapters, dependency-aware parallel waves, isolated Git worktrees, specialized implementor agents, ordered phase commits, and an optional parallel phase-commit review. Use only after the user explicitly approves implementation of plans under docs/implementation-plan/. After the whole product is integrated, buildable, and passing, it separately asks whether fresh reviewer agents should inspect every phase commit; the main agent verifies findings, amends fixes and practical regression tests into the responsible commits, safely replays descendants, and restores a clean passing tip.
+description: Implements an approved, validated product or change plan through contract-first boundaries, evidence-backed external adapters, dependency-aware parallel waves, isolated Git worktrees, specialized implementor agents, ordered phase commits, and an optional parallel phase-commit review. Use for full-product, scoped feature, modernization or migration, and remediation or reliability plans under docs/implementation-plan/, and only after explicit implementation approval. After the approved scope is integrated and the repository is buildable and passing, it separately asks whether fresh reviewer agents should inspect every phase commit; the main agent verifies findings, amends fixes and practical regression tests into the responsible commits, safely replays descendants, and restores a clean passing tip.
 metadata:
-  version: "2.2.0"
-  compatibility: "Requires a filesystem-enabled coding agent, Git worktrees, product build/test tooling, and a host that can spawn isolated subagents. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; substitutions need explicit approval. Optional review requires `phase-commit-reviewer`. Python 3 is optional for validation."
+  version: "2.3.0"
+  compatibility: "Requires a filesystem-enabled coding agent, Python 3 validation, Git worktrees, product build/test tooling, and a host that can spawn isolated subagents. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; substitutions need explicit approval. Optional review requires `phase-commit-reviewer`."
   companion-for: "product-implementation-planner"
   reviewer-skill: "phase-commit-reviewer"
 ---
@@ -11,13 +11,13 @@ metadata:
 <!--
 COMPLETE SKILL DESCRIPTION
 
-This skill takes an explicitly approved and validated product implementation plan under `docs/implementation-plan/` and turns it into a controlled, contract-first implementation, integration, and optional review workflow. The main agent acts as implementation orchestrator, contract owner, integration lead, and reviewer-of-reviewers. It first verifies repository state, plan readiness, unresolved decision gates, requested model profiles, Git and worktree support, build and test tooling, and the exact set of authorized component phases. It re-reads the complete planning set rather than relying on a summary.
+This skill takes an explicitly approved and validated product or change implementation plan under `docs/implementation-plan/` and turns it into a controlled, contract-first implementation, integration, and optional review workflow. The main agent acts as implementation orchestrator, contract owner, integration lead, and reviewer-of-reviewers. It first verifies repository state, delivery scope mode, impact cone, preserved behavior, plan readiness, unresolved decision gates, requested model profiles, Git and worktree support, build and test tooling, and the exact set of authorized component phases. It re-reads the complete in-scope planning set and relevant baseline evidence rather than relying on a summary.
 
-Before parallel coding begins, the skill constructs a dependency graph and writes implementation orchestration artifacts under `docs/implementation-plan/parallel-implementation/`. For every component and phase, it produces a boundary definition describing exactly what the phase may rely on from predecessors and what it must provide to consumers. Boundaries include public symbols, module paths, endpoints, schemas, events, commands, configuration keys, behavior, errors, transactions, consistency, concurrency, retries, timeouts, idempotency, migration ownership, compatibility, test doubles, contract tests, owned paths, read-only paths, shared paths, generated paths, forbidden paths, and integration prerequisites. Public contracts are materialized and frozen as implementation-neutral artifacts before consumer phases launch. For material external systems, product-owned port fakes may enable consumer parallelism, but they do not establish provider or adapter fidelity; adapter work remains gated on independent evidence and characterization or conformance. Dependencies are classified as independent, contract-bound, implementation-bound, or decision-gated, and only genuinely safe units are placed in the same parallel wave.
+Before parallel coding begins, the skill constructs a dependency graph and writes implementation orchestration artifacts under `docs/implementation-plan/parallel-implementation/`. For every authorized phase, it produces a boundary definition describing exactly what the phase may rely on from predecessors and what it must provide to consumers. Boundaries include public symbols, module paths, endpoints, schemas, events, commands, configuration keys, behavior, errors, transactions, consistency, concurrency, retries, timeouts, idempotency, migration ownership, compatibility, test doubles, contract tests, owned paths, read-only paths, shared paths, generated paths, forbidden paths, and integration prerequisites. Public contracts are materialized and frozen as implementation-neutral artifacts before consumer phases launch. For material external systems, product-owned port fakes may enable consumer parallelism, but they do not establish provider or adapter fidelity; adapter work remains gated on independent evidence and characterization or conformance. Dependencies are classified as independent, contract-bound, implementation-bound, or decision-gated, and only genuinely safe units are placed in the same parallel wave.
 
-For each eligible phase, the skill creates a dedicated branch and Git worktree and launches one fresh implementor agent with the requested `gpt-5.6-terra` / `xhigh` profile when the host supports it. Every implementor receives the exact product context, architecture, component plan, phase section, boundary section, consumed and produced contracts, predecessor guarantees, path ownership, repository instructions, validation commands, deliverables, and exit criteria. Workers must not guess through contract gaps, edit outside their ownership, or change canonical contracts unilaterally. They implement, test, commit, and return structured evidence. The main agent reviews each result and integrates completed phases in topological dependency order, not completion order, producing one identifiable logical commit per phase and validating contracts, migrations, affected components, generated artifacts, and the complete repository as required. New waves launch only from a known passing integration checkpoint.
+For each eligible phase, the skill creates a dedicated branch and Git worktree and launches one fresh implementor agent with the requested `gpt-5.6-terra` / `xhigh` profile when the host supports it. Every implementor receives the typed approved-scope fields, exact product context, architecture, component plan, phase section, boundary section, consumed and produced contracts, predecessor guarantees, path ownership, repository instructions, validation commands, deliverables, and exit criteria. Workers must not guess through contract gaps, expand the approved scope, edit outside their ownership, or change canonical contracts unilaterally. They implement, test, commit, and return structured evidence. The main agent reviews each result and integrates completed phases in topological dependency order, not completion order, producing one identifiable logical commit per phase and validating contracts, migrations, affected components, generated artifacts, and the complete repository as required. New waves launch only from a known passing integration checkpoint.
 
-After every authorized phase is integrated and the whole product is clean, buildable, and passing, the skill asks the user whether parallel review is required. If approved, it creates review manifests and one context-complete assignment per phase commit, then launches one fresh read-only reviewer agent per commit using the requested `gpt-5.6-sol` / `xhigh` profile. Each reviewer is pinned to the exact parent-to-target commit diff and receives the relevant plans, boundaries, contracts, repository rules, callers and callees, phase map, later-phase summaries, and frozen final baseline. Reviewers use the phase-aware xhigh code-review protocol and return structured findings without editing code or Git history.
+After every authorized phase is integrated and the repository is clean, buildable, and passing, the skill asks the user whether parallel review is required. If approved, it creates review manifests and one context-complete assignment per phase commit, then launches one fresh read-only reviewer agent per commit using the requested `gpt-5.6-sol` / `xhigh` profile. Each reviewer is pinned to the exact parent-to-target commit diff and receives the relevant plans, boundaries, contracts, repository rules, callers and callees, phase map, later-phase summaries, and frozen final baseline. Reviewers use the phase-aware xhigh code-review protocol and return structured findings without editing code or Git history.
 
 The main agent independently verifies every reported finding, rejects false positives, deduplicates shared mechanisms, determines whether an issue remains in the final state, assigns each confirmed issue to the earliest responsible phase, and designs a regression test where practical. It then performs one controlled history reconstruction from the earliest affected phase: creates a backup reference and rewrite branch, amends fixes and phase-valid tests into the responsible phase commits, replays all later commits in order, preserves corrected earlier invariants and intended later behavior, resolves conflicts, records the old-to-new commit map, and reruns the complete validation suite. It never silently rewrites published or protected history, never force-pushes without separate authorization, and never claims parallel execution or model identities the host did not actually provide.
 
@@ -51,7 +51,7 @@ Record requested and actual profiles in `execution-manifest.json`. A skill canno
 Create and execute a controlled implementation workflow in which:
 
 - every implementation unit maps to one stable component-phase ID such as `PH-001-00`;
-- every worker receives a precise plan, frozen boundary, path ownership, and validation contract;
+- every worker receives the typed approved scope, a precise plan, frozen boundary, path ownership, and validation contract;
 - every external-adapter worker receives the applicable evidence, known gaps, test-double limitations, access authorization, and characterization or conformance plan;
 - contract-safe units may run concurrently in separate Git worktrees;
 - implementation-bound units wait for the required integration checkpoint;
@@ -104,6 +104,7 @@ A fix belongs in the earliest responsible phase where the corrected implementati
 26. **Preserve external-system provenance.** A mock, generated client, legacy wrapper, or self-authored schema is not independent provider evidence. Trace adapter behavior to the planning evidence or keep the phase blocked.
 27. **Separate internal fakes from provider emulators.** Internal-port fakes may unblock consumers; provider emulators and real adapters require external evidence and later conformance.
 28. **Gate external access.** Public documentation and repository evidence may be read safely; private/live access must be authorized, and read access never implies sandbox, canary, production, quota-consuming, or destructive writes.
+29. **Honor the approved change boundary.** Implement only authorized phases and necessary recorded prerequisites. Whole-repository inspection and regression testing identify impact; they do not authorize adjacent redesign, cleanup, or feature work.
 
 ## Required inputs
 
@@ -111,13 +112,14 @@ Locate or receive:
 
 - repository root;
 - planning root, `docs/implementation-plan/`;
+- delivery scope mode, requested outcome, impact cone, preserved behavior, and explicit non-goals;
 - exact user-approved scope;
 - planning status and authorized `PH-###-##` IDs;
 - unresolved `DEC-###` gates;
 - planner-validator command and result;
 - for material external systems, the relevant dossier, evidence and unknowns, test-double limitations, conformance plan, and authorized access scope.
 
-When scope is “the whole plan,” include every phase that is authorized now. Do not cross unresolved decision gates automatically; later phases may be scheduled after those gates close.
+When scope is “the whole plan,” include every phase that is authorized now. Otherwise include only authorized phases. A prerequisite may become an execution unit only when it already appears in the plan's `planned_phase_ids` and `authorized_phase_ids`; otherwise stop for approval and a plan amendment rather than adding it implicitly. Keep adjacent or deferred units excluded even when repository inspection discovers them. Do not cross unresolved decision gates automatically; later phases may be scheduled after those gates close.
 
 ## Workflow
 
@@ -128,14 +130,14 @@ Follow the implementation phases in order.
 Read `references/execution-workflow.md` completely and follow its detailed Phases 0–8 in order. In summary:
 
 0. preflight Git, repository state, tools, plans, requested profiles, baseline build/tests, and a protected integration worktree;
-1. reconstruct the complete phase dependency DAG and correct unsafe dependency classifications;
+1. reconstruct the complete dependency DAG for authorized phases and necessary prerequisites, and correct unsafe dependency classifications;
 2. create boundary documents, the execution manifest, ledger, dependency graph, integration order, and complete worker prompts;
 3. materialize and validate the smallest implementation-neutral contract baseline, then freeze its commit;
 4. form maximum-safe waves with no decision, implementation, path, migration, generated-output, lockfile, or infrastructure conflict;
 5. create one branch/worktree and fresh `gpt-5.6-terra` / `xhigh` implementor per ready unit, supplying the exact plan, boundary, contracts, paths, rules, checks, and result contract;
 6. review and integrate units topologically into one dedicated logical commit per `PH-###-##`;
 7. apply formal contract change control rather than allowing provider/consumer drift;
-8. run complete product and planning validation, update evidence, and freeze a clean buildable passing review baseline.
+8. run scope, affected-area, and whole-repository regression validation, update evidence, and freeze a clean buildable passing review baseline.
 
 Run `scripts/validate_parallel_plan.py` before dispatch, after material changes, and after final implementation integration. Do not offer review until Phase 8 is green.
 
@@ -145,7 +147,7 @@ When an approved phase touches a material external system, read `references/exte
 
 After Phase 8 succeeds, ask exactly one direct question:
 
-> Implementation and integration are complete, and the project is buildable and passing. Should I run a parallel review of every phase commit?
+> Implementation and integration are complete for the approved scope, and the project is buildable and passing. Should I run a parallel review of every phase commit?
 
 - If the user declines, record `review_gate.status = declined`, finish the skill, and report the green implementation state.
 - If the user approves, record the authorization and continue without asking a second generic confirmation.
@@ -220,6 +222,7 @@ In addition to the conditions above:
 - treating an internal-port fake as proof that the provider or real adapter behaves correctly;
 - building a provider emulator from the same unsupported assumptions as the adapter;
 - passing an external-adapter phase solely because mock-based tests are green;
+- absorbing adjacent refactors, legacy cleanup, or unrelated defects into a bounded change because repository-wide analysis exposed them;
 - branching every phase from one commit despite implementation-bound dependencies;
 - allowing same-wave agents to edit lockfiles, migrations, generated output, or central registries without one owner;
 - integrating in completion order instead of dependency order;

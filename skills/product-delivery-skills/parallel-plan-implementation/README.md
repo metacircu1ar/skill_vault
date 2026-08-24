@@ -2,7 +2,7 @@
 
 A companion Agent Skill for `product-implementation-planner`.
 
-It converts validated product phases into frozen contracts and boundaries, executes safe dependency waves with isolated implementor agents and Git worktrees, integrates one traceable commit per phase, verifies the complete repository, and then offers an optional parallel review of every phase commit. When review is approved, fresh read-only reviewer agents return structured findings; the main agent verifies them, adds fixes and practical regression tests to the responsible phase commits, safely replays descendants, and restores a passing final state.
+It converts validated full-product or bounded-change phases into frozen contracts and boundaries, executes safe dependency waves with isolated implementor agents and Git worktrees, integrates one traceable commit per authorized phase, verifies the complete repository for regressions without expanding scope, and then offers an optional parallel review of every phase commit. When review is approved, fresh read-only reviewer agents return structured findings; the main agent verifies them, adds fixes and practical regression tests to the responsible phase commits, safely replays descendants, and restores a passing final state.
 
 ## Embedded complete-description comment
 
@@ -26,6 +26,7 @@ The review stage must not imitate a reduced reviewer when `phase-commit-reviewer
 ## Core guarantees
 
 - contract-first boundaries rather than prose-only coordination;
+- one canonical plan scope, schema-v2 execution authority, and unique scope blocks in immutable worker packets;
 - one worktree and one fresh implementor per eligible phase;
 - dependency-aware waves and explicit shared-path ownership;
 - one reviewable logical integration commit per phase;

@@ -20,7 +20,14 @@ Return `IMPLEMENTATION_BLOCKER` without coding when the requested profile is una
 - **Base commit:** `<resolved runtime commit; the committed launch-baseline copy may say pending>`
 - **Wave:** `<number>`
 
+## Approved delivery scope
+
+<!-- approved-scope:begin -->
+{"delivery_scope_mode":"<full product|scoped change|modernization or migration|remediation or reliability>","requested_outcome":"<JSON-escaped string>","impact_cone":"<JSON-escaped string>","preserved_behavior":["<exact entries>"],"non_goals":["<exact entries>"]}
+<!-- approved-scope:end -->
+
 Work only in the assigned worktree and branch.
+Treat the supplied scope fields as authoritative. Repository inspection and regression failures may expose blockers or necessary prerequisites, but they do not authorize adjacent cleanup, redesign, or feature work.
 
 ## Required reading
 
@@ -83,7 +90,7 @@ Run and report:
 
 ## Blocker behavior
 
-Return `CONTRACT_BLOCKER` rather than guessing when a required interface, symbol, behavior, schema, path, or test double is absent or contradictory.
+Return `CONTRACT_BLOCKER` rather than guessing when the unique approved-scope block or a required interface, symbol, behavior, schema, path, or test double is absent, malformed, duplicated, or contradictory.
 
 Return `IMPLEMENTATION_BLOCKER` when repository or tooling state prevents implementation within the frozen boundary.
 

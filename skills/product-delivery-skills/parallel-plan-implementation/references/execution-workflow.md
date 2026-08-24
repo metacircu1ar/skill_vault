@@ -26,7 +26,7 @@ python3 <planner-skill-root>/scripts/validate_plan.py <repository-root>
 
 ### Implementation Phase 1 — Reconstruct and verify the dependency graph
 
-Read all component plans and `92-delivery-roadmap.md` rather than trusting the roadmap summary alone.
+Read every component plan in the approved scope, `92-delivery-roadmap.md`, and the baseline documents needed to understand affected dependencies rather than trusting the roadmap summary alone. Do not add an implementation unit merely because impact analysis found unrelated work outside the approved scope.
 
 For every approved component phase, create one implementation unit and verify:
 
@@ -91,7 +91,7 @@ Each phase boundary must specify:
 
 Boundary documents describe reliance, not private implementation. Link to canonical schemas or declarations rather than copying definitions into multiple sources of truth.
 
-Create `execution-manifest.json` from `assets/execution-manifest.schema.json`. It is the machine-readable source for worker assignment, waves, branches, worktrees, paths, dependencies, contracts, validation, and status.
+Create schema-v2 `execution-manifest.json` from `assets/execution-manifest.schema.json`. Copy its five typed approved-scope fields from the canonical delivery-scope block in `00-product-description.md` at `integration.planning_commit`; set `phase_ids` to executable units only, and verify each against that immutable plan's authorization registry. It is the machine-readable source for worker assignment, waves, branches, worktrees, paths, dependencies, contracts, validation, and status. Copy the five fields into exactly one approved-scope JSON block in every worker prompt.
 
 ### Implementation Phase 3 — Freeze the contract baseline
 
@@ -150,8 +150,9 @@ For the next ready wave:
 2. Create one unique branch and Git worktree per unit from that commit.
 3. Update the integration-branch manifest and ledger with the resolved base commit, branch, and worktree in a separate orchestration commit; do not try to make the launch baseline record its own hash.
 4. Place worktrees outside the integration working tree by default. Do not add worktree directories to committed product configuration merely for orchestration convenience.
-5. Verify that one worker prompt generated from `assets/worker-prompt-template.md` is present in the launch baseline for each unit; supplement the runtime task message with the resolved base commit and worktree path.
+5. Verify that one worker prompt generated from `assets/worker-prompt-template.md` and the matching schema-v2 execution manifest are present in the launch baseline for each unit. Validate their scope block from that commit, not a mutable worktree copy; supplement the runtime task message only with the resolved base commit and worktree path.
 6. Give each worker only the context it needs:
+   - the unique typed approved-scope JSON block copied from the execution manifest;
    - component plan and exact phase section;
    - component boundary document and exact phase section;
    - canonical contract files;
@@ -171,7 +172,7 @@ A worker must:
 - run its required checks;
 - commit its work on its branch;
 - return commit IDs, changed paths, test evidence, contract compliance, deviations, and blockers;
-- return `CONTRACT_BLOCKER` without speculative implementation when a required guarantee is missing or contradictory.
+- return `CONTRACT_BLOCKER` without speculative implementation when the approved-scope block or a required guarantee is missing, malformed, duplicated, or contradictory.
 
 When the host lacks parallel-agent support, stop after boundary and manifest generation and report that true parallel execution cannot be performed in that environment. Do not silently execute the worker list sequentially unless the user explicitly authorizes a sequential fallback.
 
@@ -217,7 +218,7 @@ Do not patch providers and consumers independently until tests happen to pass. T
 
 After all approved units are integrated:
 
-1. run the complete repository build, test, static-analysis, formatting, security, migration, generated-code, and packaging checks applicable to the plan;
+1. run the complete repository build, test, static-analysis, formatting, security, migration, generated-code, and packaging checks applicable to the plan as regression gates, not as authorization to expand the change;
 2. run planned end-to-end, contract, resilience, accessibility, performance, backup/restore, and rollout checks feasible in the environment;
 3. verify requirement, component, phase, contract, and one-commit-per-phase traceability;
 4. verify every phase commit exists in deterministic integration order and contains its phase ID;

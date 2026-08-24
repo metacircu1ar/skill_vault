@@ -14,7 +14,7 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 PLAN_RELATIVE_PATH = Path("docs") / "implementation-plan"
@@ -139,7 +139,18 @@ MANIFEST_REQUIRED_KEYS = (
     "integration_order",
     "excluded_units",
     "validation_commands",
+    "review_gate",
     "updated_at",
+)
+
+APPROVED_SCOPE_REQUIRED_KEYS = (
+    "phase_ids",
+    "description",
+    "delivery_scope_mode",
+    "requested_outcome",
+    "impact_cone",
+    "preserved_behavior",
+    "non_goals",
 )
 
 UNIT_REQUIRED_KEYS = (
@@ -191,6 +202,36 @@ DECISION_ID_RE = re.compile(r"^DEC-\d{3,}$")
 COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,64}$")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 COMPONENT_DOC_ID_RE = re.compile(r"\bComponent\s+ID\s*:\s*(CMP-\d{3,})\b", re.IGNORECASE)
+PLAN_SCOPE_BEGIN = "<!-- delivery-scope:begin -->"
+PLAN_SCOPE_END = "<!-- delivery-scope:end -->"
+PROMPT_SCOPE_BEGIN = "<!-- approved-scope:begin -->"
+PROMPT_SCOPE_END = "<!-- approved-scope:end -->"
+PLAN_SCOPE_KEYS = {
+    "schema_version",
+    "delivery_scope_mode",
+    "requested_outcome",
+    "impact_cone",
+    "preserved_behavior",
+    "non_goals",
+    "planned_phase_ids",
+    "authorized_phase_ids",
+    "applicable_documents",
+    "preserved_document_sources",
+}
+PROMPT_SCOPE_KEYS = {
+    "delivery_scope_mode",
+    "requested_outcome",
+    "impact_cone",
+    "preserved_behavior",
+    "non_goals",
+}
+
+DELIVERY_SCOPE_MODES = {
+    "full product",
+    "scoped change",
+    "modernization or migration",
+    "remediation or reliability",
+}
 
 VALID_MANIFEST_STATUSES = {
     "draft",
@@ -290,6 +331,69 @@ def string_list(value: Any, label: str, errors: list[str]) -> list[str]:
     return value
 
 
+def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate key {key!r}")
+        result[key] = value
+    return result
+
+
+def parse_json_block(
+    text: str,
+    begin: str,
+    end: str,
+    required_keys: set[str],
+    label: str,
+    errors: list[str],
+) -> dict[str, Any] | None:
+    if text.count(begin) != 1 or text.count(end) != 1:
+        errors.append(f"{label}: expected exactly one {begin} ... {end} block")
+        return None
+    start = text.find(begin) + len(begin)
+    finish = text.find(end, start)
+    if finish < start:
+        errors.append(f"{label}: scope block markers are out of order")
+        return None
+    try:
+        value = json.loads(
+            text[start:finish].strip(), object_pairs_hook=reject_duplicate_keys
+        )
+    except (json.JSONDecodeError, ValueError) as exc:
+        errors.append(f"{label}: invalid scope JSON: {exc}")
+        return None
+    if not isinstance(value, dict):
+        errors.append(f"{label}: scope block must contain one JSON object")
+        return None
+    if set(value) != required_keys:
+        errors.append(
+            f"{label}: scope keys differ; missing={sorted(required_keys - set(value))}, "
+            f"extra={sorted(set(value) - required_keys)}"
+        )
+        return None
+    return value
+
+
+def scope_projection(scope: dict[str, Any]) -> dict[str, Any]:
+    return {key: scope.get(key) for key in PROMPT_SCOPE_KEYS}
+
+
+def validate_prompt_scope(
+    text: str, expected: dict[str, Any], label: str, errors: list[str]
+) -> None:
+    actual = parse_json_block(
+        text,
+        PROMPT_SCOPE_BEGIN,
+        PROMPT_SCOPE_END,
+        PROMPT_SCOPE_KEYS,
+        label,
+        errors,
+    )
+    if actual is not None and actual != expected:
+        errors.append(f"{label}: approved-scope block does not match its immutable source")
+
+
 def commit_exists(repo_root: Path, commit: str) -> bool:
     if not COMMIT_RE.fullmatch(commit):
         return False
@@ -302,13 +406,32 @@ def commit_exists(repo_root: Path, commit: str) -> bool:
     return result.returncode == 0
 
 
+def normalize_git_tree_path(relative_path: str) -> str | None:
+    """Normalize a repository-relative Git tree path without rewriting dotfiles or traversal."""
+
+    value = relative_path.replace("\\", "/")
+    while value.startswith("./"):
+        value = value.removeprefix("./")
+    path = PurePosixPath(value)
+    if (
+        not value
+        or not path.parts
+        or "\x00" in value
+        or path.is_absolute()
+        or re.match(r"^[A-Za-z]:/", value)
+        or ".." in path.parts
+    ):
+        return None
+    return path.as_posix()
+
+
 def commit_contains_path(repo_root: Path, commit: str, relative_path: str) -> bool:
     """Return whether a repository-relative path exists in a commit tree."""
 
     if not COMMIT_RE.fullmatch(commit):
         return False
-    normalized = relative_path.replace("\\", "/").lstrip("./")
-    if not normalized or normalized.startswith("../"):
+    normalized = normalize_git_tree_path(relative_path)
+    if normalized is None:
         return False
     result = subprocess.run(
         ["git", "-C", str(repo_root), "cat-file", "-e", f"{commit}:{normalized}"],
@@ -317,6 +440,37 @@ def commit_contains_path(repo_root: Path, commit: str, relative_path: str) -> bo
         check=False,
     )
     return result.returncode == 0
+
+
+def git_show_text(repo_root: Path, commit: str, relative_path: str) -> str | None:
+    """Read a repository-relative UTF-8 file from a commit without consulting the worktree."""
+
+    normalized = normalize_git_tree_path(relative_path)
+    if not COMMIT_RE.fullmatch(commit) or normalized is None:
+        return None
+    result = subprocess.run(
+        ["git", "-C", str(repo_root), "show", f"{commit}:{normalized}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        return result.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def git_show_json(repo_root: Path, commit: str, relative_path: str) -> dict[str, Any] | None:
+    text = git_show_text(repo_root, commit, relative_path)
+    if text is None:
+        return None
+    try:
+        value = json.loads(text, object_pairs_hook=reject_duplicate_keys)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def is_ancestor(repo_root: Path, ancestor: str, descendant: str) -> bool:
@@ -498,10 +652,10 @@ def main() -> int:
     if not check_required_keys(manifest, MANIFEST_REQUIRED_KEYS, "manifest", errors):
         manifest = manifest or {}
 
-    if manifest.get("schema_version") != 1:
-        errors.append("manifest.schema_version must equal 1")
+    if manifest.get("schema_version") != 2:
+        errors.append("manifest.schema_version must equal 2")
     manifest_status = manifest.get("status")
-    if manifest_status not in VALID_MANIFEST_STATUSES:
+    if not isinstance(manifest_status, str) or manifest_status not in VALID_MANIFEST_STATUSES:
         errors.append(f"manifest.status must be one of {sorted(VALID_MANIFEST_STATUSES)}")
 
     manifest_repository_root = manifest.get("repository_root")
@@ -529,6 +683,115 @@ def main() -> int:
         errors.append(
             f"manifest.parallel_root must equal {PARALLEL_RELATIVE_PATH.as_posix()!r}"
         )
+
+    approved_scope = manifest.get("approved_scope", {})
+    delivery_scope_mode: Any = None
+    requested_outcome: Any = None
+    impact_cone: Any = None
+    preserved_behavior: list[str] = []
+    non_goals: list[str] = []
+    scope_error_count = len(errors)
+    if not isinstance(approved_scope, dict):
+        errors.append("manifest.approved_scope must be an object")
+    else:
+        check_required_keys(
+            approved_scope,
+            APPROVED_SCOPE_REQUIRED_KEYS,
+            "manifest.approved_scope",
+            errors,
+        )
+        delivery_scope_mode = approved_scope.get("delivery_scope_mode")
+        if not isinstance(delivery_scope_mode, str) or delivery_scope_mode not in DELIVERY_SCOPE_MODES:
+            errors.append(
+                "manifest.approved_scope.delivery_scope_mode must be one of "
+                f"{sorted(DELIVERY_SCOPE_MODES)}"
+            )
+        for key in ("description", "requested_outcome", "impact_cone"):
+            if not isinstance(approved_scope.get(key), str) or not approved_scope.get(key, "").strip():
+                errors.append(f"manifest.approved_scope.{key} must be a non-empty string")
+        requested_outcome = approved_scope.get("requested_outcome")
+        impact_cone = approved_scope.get("impact_cone")
+        preserved_behavior = string_list(
+            approved_scope.get("preserved_behavior"),
+            "manifest.approved_scope.preserved_behavior",
+            errors,
+        )
+        non_goals = string_list(
+            approved_scope.get("non_goals"),
+            "manifest.approved_scope.non_goals",
+            errors,
+        )
+        for key, values in (("preserved_behavior", preserved_behavior), ("non_goals", non_goals)):
+            if any(not item.strip() for item in values):
+                errors.append(f"manifest.approved_scope.{key} entries must be non-empty")
+        if not non_goals:
+            errors.append("manifest.approved_scope.non_goals must not be empty")
+        if (
+            isinstance(delivery_scope_mode, str)
+            and delivery_scope_mode in DELIVERY_SCOPE_MODES - {"full product"}
+            and not preserved_behavior
+        ):
+            errors.append(
+                "manifest.approved_scope.preserved_behavior must not be empty "
+                "for a bounded mode"
+            )
+    scope_prompt_values_valid = len(errors) == scope_error_count
+
+    product_description_path = repo_root / PLAN_RELATIVE_PATH / "00-product-description.md"
+    planning_commit_for_scope = (
+        manifest.get("integration", {}).get("planning_commit")
+        if isinstance(manifest.get("integration"), dict)
+        else None
+    )
+    if (
+        isinstance(planning_commit_for_scope, str)
+        and COMMIT_RE.fullmatch(planning_commit_for_scope)
+        and commit_exists(repo_root, planning_commit_for_scope)
+    ):
+        product_description = git_show_text(
+            repo_root,
+            planning_commit_for_scope,
+            (PLAN_RELATIVE_PATH / "00-product-description.md").as_posix(),
+        ) or ""
+        plan_scope_label = (
+            f"{planning_commit_for_scope}:"
+            f"{(PLAN_RELATIVE_PATH / '00-product-description.md').as_posix()}"
+        )
+    else:
+        product_description = read_text(product_description_path, errors)
+        plan_scope_label = str(product_description_path)
+    plan_scope = parse_json_block(
+        product_description,
+        PLAN_SCOPE_BEGIN,
+        PLAN_SCOPE_END,
+        PLAN_SCOPE_KEYS,
+        plan_scope_label,
+        errors,
+    )
+    plan_authorized_ids: set[str] = set()
+    plan_planned_ids: set[str] = set()
+    if plan_scope is not None:
+        if plan_scope.get("schema_version") != 1:
+            errors.append(f"{plan_scope_label}: delivery-scope.schema_version must equal 1")
+        for key in PROMPT_SCOPE_KEYS:
+            if scope_prompt_values_valid and plan_scope.get(key) != approved_scope.get(key):
+                errors.append(
+                    f"manifest.approved_scope.{key} does not match the canonical plan scope"
+                )
+        for key, target in (
+            ("planned_phase_ids", plan_planned_ids),
+            ("authorized_phase_ids", plan_authorized_ids),
+        ):
+            values = string_list(
+                plan_scope.get(key), f"plan delivery-scope.{key}", errors
+            )
+            for phase_id in values:
+                if not PHASE_ID_RE.fullmatch(phase_id):
+                    errors.append(f"plan delivery-scope.{key} has invalid ID {phase_id!r}")
+                else:
+                    target.add(phase_id)
+        if not plan_authorized_ids <= plan_planned_ids:
+            errors.append("plan authorized_phase_ids must be a subset of planned_phase_ids")
 
     top_level_commands = string_list(
         manifest.get("validation_commands"), "manifest.validation_commands", errors
@@ -573,7 +836,7 @@ def main() -> int:
                 if not isinstance(profile.get(key), str) or not profile.get(key, "").strip():
                     errors.append(f"{label}.{key} must be a non-empty string")
             status = profile.get("selection_status")
-            if status not in {"confirmed", "host-unverifiable", "unavailable", "substituted"}:
+            if status not in ("confirmed", "host-unverifiable", "unavailable", "substituted"):
                 errors.append(f"{label}.selection_status is invalid")
             approved = profile.get("substitution_approved")
             if not isinstance(approved, bool):
@@ -592,9 +855,9 @@ def main() -> int:
             notes = profile.get("notes")
             if not isinstance(notes, list) or any(not isinstance(item, str) for item in notes):
                 errors.append(f"{label}.notes must be an array of strings")
-            if role in {"main", "implementor"} and manifest_status in {"executing", "completed"}:
+            if role in {"main", "implementor"} and manifest_status in ("executing", "completed"):
                 ready = status == "confirmed" or (
-                    status in {"host-unverifiable", "substituted"}
+                    status in ("host-unverifiable", "substituted")
                     and approved is True
                 )
                 if not ready:
@@ -603,33 +866,32 @@ def main() -> int:
                     )
 
     review_gate = manifest.get("review_gate")
-    if review_gate is not None:
-        if not isinstance(review_gate, dict):
-            errors.append("manifest.review_gate must be an object when present")
-        else:
-            for key in ("status", "authorization_record", "review_root"):
-                if key not in review_gate:
-                    errors.append(f"manifest.review_gate missing {key}")
-            if review_gate.get("status") not in {
-                "not-offered", "offered", "declined", "approved", "running", "completed", "blocked"
-            }:
-                errors.append("manifest.review_gate.status is invalid")
-            if not isinstance(review_gate.get("authorization_record"), str):
-                errors.append("manifest.review_gate.authorization_record must be a string")
-            if not isinstance(review_gate.get("review_root"), str) or not review_gate.get("review_root", "").strip():
-                errors.append("manifest.review_gate.review_root must be a non-empty string")
-            if review_gate.get("status") in {"running", "completed"} and isinstance(agent_profiles, dict):
-                reviewer = agent_profiles.get("reviewer")
-                if isinstance(reviewer, dict):
-                    reviewer_status = reviewer.get("selection_status")
-                    reviewer_ready = reviewer_status == "confirmed" or (
-                        reviewer_status in {"host-unverifiable", "substituted"}
-                        and reviewer.get("substitution_approved") is True
+    if not isinstance(review_gate, dict):
+        errors.append("manifest.review_gate must be an object")
+    else:
+        for key in ("status", "authorization_record", "review_root"):
+            if key not in review_gate:
+                errors.append(f"manifest.review_gate missing {key}")
+        if review_gate.get("status") not in (
+            "not-offered", "offered", "declined", "approved", "running", "completed", "blocked"
+        ):
+            errors.append("manifest.review_gate.status is invalid")
+        if not isinstance(review_gate.get("authorization_record"), str):
+            errors.append("manifest.review_gate.authorization_record must be a string")
+        if not isinstance(review_gate.get("review_root"), str) or not review_gate.get("review_root", "").strip():
+            errors.append("manifest.review_gate.review_root must be a non-empty string")
+        if review_gate.get("status") in ("running", "completed") and isinstance(agent_profiles, dict):
+            reviewer = agent_profiles.get("reviewer")
+            if isinstance(reviewer, dict):
+                reviewer_status = reviewer.get("selection_status")
+                reviewer_ready = reviewer_status == "confirmed" or (
+                    reviewer_status in ("host-unverifiable", "substituted")
+                    and reviewer.get("substitution_approved") is True
+                )
+                if not reviewer_ready:
+                    errors.append(
+                        "manifest.agent_profiles.reviewer must be confirmed or explicitly approved while review is running or completed"
                     )
-                    if not reviewer_ready:
-                        errors.append(
-                            "manifest.agent_profiles.reviewer must be confirmed or explicitly approved while review is running or completed"
-                        )
 
     capabilities = manifest.get("capabilities", {})
     if isinstance(capabilities, dict):
@@ -692,7 +954,7 @@ def main() -> int:
 
         contract_baseline_commit = integration.get("contract_baseline_commit")
         if contract_baseline_commit == "pending":
-            if manifest_status in {"contract-baseline-frozen", "executing", "completed"}:
+            if manifest_status in ("contract-baseline-frozen", "executing", "completed"):
                 errors.append(
                     "manifest.integration.contract_baseline_commit cannot be pending "
                     f"for manifest status {manifest_status}"
@@ -759,7 +1021,7 @@ def main() -> int:
                 errors.append(f"duplicate contract ID: {contract_id}")
                 continue
             contracts[contract_id] = contract
-            if contract.get("status") not in VALID_CONTRACT_STATUSES:
+            if not isinstance(contract.get("status"), str) or contract.get("status") not in VALID_CONTRACT_STATUSES:
                 errors.append(f"{label}.status is invalid")
             owner = contract.get("owner_phase")
             if not isinstance(owner, str) or not PHASE_ID_RE.fullmatch(owner):
@@ -772,7 +1034,7 @@ def main() -> int:
             if not commands:
                 errors.append(f"{label}.validation_commands must not be empty")
             canonical = repo_file(repo_root, contract.get("canonical_path"), f"{label}.canonical_path", errors)
-            if canonical is not None and contract.get("status") in {"frozen", "implemented"} and not canonical.exists():
+            if canonical is not None and contract.get("status") in ("frozen", "implemented") and not canonical.exists():
                 errors.append(f"{label}.canonical_path does not exist for frozen contract: {canonical}")
 
     units_raw = manifest.get("units", [])
@@ -807,7 +1069,7 @@ def main() -> int:
             units[phase_id] = unit
 
             classification = unit.get("classification")
-            if classification not in VALID_CLASSIFICATIONS:
+            if not isinstance(classification, str) or classification not in VALID_CLASSIFICATIONS:
                 errors.append(f"{label}.classification is invalid")
             if not isinstance(unit.get("title"), str) or not unit.get("title", "").strip():
                 errors.append(f"{label}.title must be a non-empty string")
@@ -824,7 +1086,7 @@ def main() -> int:
                     f"{phase_id}: open decision gates require decision-gated classification"
                 )
 
-            if unit.get("status") not in VALID_UNIT_STATUSES:
+            if not isinstance(unit.get("status"), str) or unit.get("status") not in VALID_UNIT_STATUSES:
                 errors.append(f"{label}.status is invalid")
             if not isinstance(unit.get("wave"), int) or unit.get("wave") < 0:
                 errors.append(f"{label}.wave must be a non-negative integer")
@@ -848,14 +1110,14 @@ def main() -> int:
 
             base_commit = unit.get("base_commit")
             if base_commit == "pending":
-                if unit.get("status") in {
+                if unit.get("status") in (
                     "ready",
                     "running",
                     "worker-completed",
                     "integration-failed",
                     "integrated",
                     "verified",
-                }:
+                ):
                     errors.append(f"{label}.base_commit cannot be pending for status {unit.get('status')}")
             elif not isinstance(base_commit, str) or not COMMIT_RE.fullmatch(base_commit):
                 errors.append(f"{label}.base_commit must be pending or an existing commit ID")
@@ -901,8 +1163,63 @@ def main() -> int:
                 )
 
             prompt_text = ""
+            prompt_label = str(prompt_path)
             if prompt_path is not None and prompt_path.is_file():
                 prompt_text = read_text(prompt_path, errors)
+                working_prompt_text = prompt_text
+                expected_prompt_scope = (
+                    scope_projection(approved_scope) if scope_prompt_values_valid else None
+                )
+                prompt_relative = unit.get("worker_prompt_path")
+                if (
+                    isinstance(base_commit, str)
+                    and base_commit != "pending"
+                    and COMMIT_RE.fullmatch(base_commit)
+                    and commit_exists(repo_root, base_commit)
+                    and isinstance(prompt_relative, str)
+                ):
+                    committed_prompt = git_show_text(repo_root, base_commit, prompt_relative)
+                    committed_manifest = git_show_json(
+                        repo_root,
+                        base_commit,
+                        (PARALLEL_RELATIVE_PATH / "execution-manifest.json").as_posix(),
+                    )
+                    prompt_label = f"{base_commit}:{prompt_relative}"
+                    if committed_prompt is None:
+                        errors.append(f"{prompt_label}: immutable worker prompt is missing or unreadable")
+                        prompt_text = ""
+                    else:
+                        prompt_text = committed_prompt
+                        if committed_prompt != working_prompt_text:
+                            errors.append(
+                                f"{prompt_path}: working prompt differs from immutable base {prompt_label}"
+                            )
+                    if committed_manifest is None:
+                        errors.append(
+                            f"unit {phase_id}: base commit {base_commit} lacks a valid execution manifest"
+                        )
+                        expected_prompt_scope = None
+                    else:
+                        if committed_manifest.get("schema_version") != 2:
+                            errors.append(
+                                f"unit {phase_id}: base execution manifest schema_version must equal 2"
+                            )
+                        committed_scope = committed_manifest.get("approved_scope")
+                        if not isinstance(committed_scope, dict) or not PROMPT_SCOPE_KEYS <= set(
+                            committed_scope
+                        ):
+                            errors.append(
+                                f"unit {phase_id}: base execution manifest has no complete approved_scope"
+                            )
+                            expected_prompt_scope = None
+                        else:
+                            expected_prompt_scope = scope_projection(committed_scope)
+                            if scope_prompt_values_valid and expected_prompt_scope != scope_projection(
+                                approved_scope
+                            ):
+                                errors.append(
+                                    f"unit {phase_id}: immutable base approved_scope differs from the current manifest"
+                                )
                 prompt_expectations = (
                     phase_id,
                     component_id,
@@ -915,7 +1232,20 @@ def main() -> int:
                 )
                 for expected in prompt_expectations:
                     if expected not in prompt_text:
-                        errors.append(f"{prompt_path}: worker prompt missing {expected!r}")
+                        errors.append(f"{prompt_label}: worker prompt missing {expected!r}")
+                if expected_prompt_scope is not None:
+                    validate_prompt_scope(
+                        prompt_text, expected_prompt_scope, prompt_label, errors
+                    )
+                elif prompt_text:
+                    parse_json_block(
+                        prompt_text,
+                        PROMPT_SCOPE_BEGIN,
+                        PROMPT_SCOPE_END,
+                        PROMPT_SCOPE_KEYS,
+                        prompt_label,
+                        errors,
+                    )
 
             list_values: dict[str, list[str]] = {}
             for key in (
@@ -973,21 +1303,21 @@ def main() -> int:
             if prompt_text:
                 for contract_id in list_values["consumes_contracts"] + list_values["produces_contracts"]:
                     if contract_id not in prompt_text:
-                        errors.append(f"{prompt_path}: worker prompt missing contract ID {contract_id}")
+                        errors.append(f"{prompt_label}: worker prompt missing contract ID {contract_id}")
                     contract = contracts.get(contract_id)
                     canonical_path = contract.get("canonical_path") if isinstance(contract, dict) else None
                     if isinstance(canonical_path, str) and canonical_path not in prompt_text:
                         errors.append(
-                            f"{prompt_path}: worker prompt missing canonical contract path {canonical_path!r}"
+                            f"{prompt_label}: worker prompt missing canonical contract path {canonical_path!r}"
                         )
 
             integration_commit = unit.get("integration_commit")
             if integration_commit != "pending":
                 if not isinstance(integration_commit, str) or not COMMIT_RE.fullmatch(integration_commit):
                     errors.append(f"{label}.integration_commit must be pending or a commit ID")
-                elif unit.get("status") in {"integrated", "verified"}:
+                elif unit.get("status") in ("integrated", "verified"):
                     integration_commits.append((f"{label}.integration_commit", integration_commit))
-            if unit.get("status") in {"integrated", "verified"} and integration_commit == "pending":
+            if unit.get("status") in ("integrated", "verified") and integration_commit == "pending":
                 errors.append(f"{label}: integrated or verified unit must record integration_commit")
 
     unit_ids = set(units)
@@ -1012,11 +1342,8 @@ def main() -> int:
             if not isinstance(reason, str) or not reason:
                 errors.append(f"{label}.reason must be non-empty")
 
-    approved_scope = manifest.get("approved_scope", {})
     approved_ids: set[str] = set()
-    if not isinstance(approved_scope, dict):
-        errors.append("manifest.approved_scope must be an object")
-    else:
+    if isinstance(approved_scope, dict):
         approved_values = string_list(
             approved_scope.get("phase_ids"), "manifest.approved_scope.phase_ids", errors
         )
@@ -1024,17 +1351,28 @@ def main() -> int:
             if not PHASE_ID_RE.fullmatch(phase_id):
                 errors.append(f"manifest.approved_scope contains invalid phase ID {phase_id!r}")
             approved_ids.add(phase_id)
-        if (
-            not isinstance(approved_scope.get("description"), str)
-            or not approved_scope.get("description", "").strip()
-        ):
-            errors.append("manifest.approved_scope.description must be a non-empty string")
-    if approved_ids != unit_ids | excluded_ids:
+    if approved_ids != unit_ids:
         errors.append(
-            "approved scope must equal manifest unit IDs plus excluded unit IDs; "
-            f"missing={sorted((unit_ids | excluded_ids) - approved_ids)}, "
-            f"extra={sorted(approved_ids - (unit_ids | excluded_ids))}"
+            "manifest approved phase_ids must equal executable unit IDs; "
+            f"missing={sorted(unit_ids - approved_ids)}, "
+            f"extra={sorted(approved_ids - unit_ids)}"
         )
+    if unit_ids & excluded_ids:
+        errors.append(
+            f"executable and excluded phase IDs must be disjoint: {sorted(unit_ids & excluded_ids)}"
+        )
+    if plan_scope is not None:
+        if not unit_ids <= plan_authorized_ids:
+            errors.append(
+                "execution units are not authorized by the canonical plan scope: "
+                f"{sorted(unit_ids - plan_authorized_ids)}"
+            )
+        if plan_planned_ids != unit_ids | excluded_ids:
+            errors.append(
+                "canonical planned phases must equal executable plus excluded phases; "
+                f"missing={sorted(plan_planned_ids - (unit_ids | excluded_ids))}, "
+                f"extra={sorted((unit_ids | excluded_ids) - plan_planned_ids)}"
+            )
 
     # Validate contract references now that units are known.
     known_phase_ids = unit_ids | excluded_ids
@@ -1156,7 +1494,7 @@ def main() -> int:
             if provider in seen_providers:
                 errors.append(f"{dep_label}: duplicate predecessor {provider}")
             seen_providers.add(provider)
-            if dep_type not in VALID_DEPENDENCY_TYPES:
+            if not isinstance(dep_type, str) or dep_type not in VALID_DEPENDENCY_TYPES:
                 errors.append(f"{dep_label}.type must be contract-bound or implementation-bound")
                 continue
             dependency_types.add(dep_type)
@@ -1172,7 +1510,7 @@ def main() -> int:
                 contract = contracts.get(contract_id)
                 if contract is None:
                     errors.append(f"{dep_label}: unknown contract ID {contract_id}")
-                elif contract.get("status") not in {"frozen", "implemented"}:
+                elif contract.get("status") not in ("frozen", "implemented"):
                     errors.append(
                         f"{dep_label}: consumed contract {contract_id} is not frozen or implemented"
                     )
@@ -1237,10 +1575,10 @@ def main() -> int:
                 errors.append(f"duplicate wave number: {number}")
                 continue
             waves[number] = wave
-            if status not in VALID_WAVE_STATUSES:
+            if not isinstance(status, str) or status not in VALID_WAVE_STATUSES:
                 errors.append(f"{label}.status is invalid")
             if base_commit == "pending":
-                if status in {"ready", "running", "integrating", "completed"}:
+                if status in ("ready", "running", "integrating", "completed"):
                     errors.append(f"{label}.base_commit cannot be pending for status {status}")
             elif not isinstance(base_commit, str) or not COMMIT_RE.fullmatch(base_commit):
                 errors.append(f"{label}.base_commit must be pending or an existing commit ID")
@@ -1321,7 +1659,7 @@ def main() -> int:
         for contract_id, contract in contracts.items():
             canonical_path = contract.get("canonical_path")
             if (
-                contract.get("status") in {"frozen", "implemented"}
+                contract.get("status") in ("frozen", "implemented")
                 and isinstance(canonical_path, str)
                 and not commit_contains_path(repo_root, contract_baseline_commit, canonical_path)
             ):
@@ -1363,7 +1701,7 @@ def main() -> int:
                 continue
             provider_unit = units[provider]
             provider_integration = provider_unit.get("integration_commit")
-            if provider_unit.get("status") not in {"integrated", "verified"}:
+            if provider_unit.get("status") not in ("integrated", "verified"):
                 errors.append(
                     f"unit {phase_id}: resolved base requires implementation-bound predecessor "
                     f"{provider} to be integrated or verified"

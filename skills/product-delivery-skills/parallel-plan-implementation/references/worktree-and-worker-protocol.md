@@ -80,6 +80,7 @@ Adapt to repository policy. Do not rely on the example literally when names alre
 Every implementor receives the requested runtime profile `gpt-5.6-terra` / `xhigh`, the host-reported actual profile, and:
 
 - unit and component IDs;
+- exactly one approved-scope JSON block containing the typed delivery scope mode, requested outcome, impact cone, preserved behavior, and non-goals copied from the schema-v2 `execution-manifest.json` in the unit's base commit;
 - exact worktree path and branch;
 - source component plan and phase link;
 - component boundary document and phase link;
@@ -89,7 +90,7 @@ Every implementor receives the requested runtime profile `gpt-5.6-terra` / `xhig
 - implementation scope and explicit non-scope;
 - required commands and exit criteria;
 - expected commit and result format;
-- instruction to return `CONTRACT_BLOCKER` rather than change a contract.
+- instruction to return `CONTRACT_BLOCKER` when that scope block or a required contract is missing, malformed, duplicated, or contradictory rather than guessing or changing it.
 
 Give the implementor complete context relevant to its phase, including every plan, boundary, contract, repository rule, predecessor guarantee, and consumer obligation needed to implement it correctly. Do not bury it in unrelated plans; relevance, not minimum token count, defines the packet. It may read additional repository files needed to understand existing code but must not expand its assigned scope.
 

@@ -66,6 +66,8 @@ Clearly distinguish boundaries prepared, workers launched, units completed, unit
 
 This is the machine-readable orchestration source. Conform to `assets/execution-manifest.schema.json`.
 
+Use execution-manifest schema version `2`. Version 2 makes `agent_profiles`, `review_gate`, and the typed approved-scope fields mandatory; schema validation and the bundled validator must accept the same document.
+
 It must contain:
 
 - schema version;
@@ -84,6 +86,21 @@ It must contain:
 - excluded or blocked units;
 - validation commands;
 - update timestamp and status.
+
+The `approved_scope` object must contain:
+
+- `phase_ids` and a concise human-readable `description`;
+- `delivery_scope_mode`, using the planner's four-value enumeration;
+- non-empty `requested_outcome` and `impact_cone` strings;
+- `preserved_behavior` and `non_goals` arrays of explicit statements.
+
+The preservation array must be present, and every bounded mode requires at least one explicit preservation statement; the array may be empty only for `full product`. Every mode requires at least one explicit non-goal. These five typed fields must equal the canonical delivery-scope block in `00-product-description.md` at `integration.planning_commit`; `description` is only their summary. `phase_ids` must equal executable unit IDs, each must be in that immutable plan's `authorized_phase_ids`, and excluded IDs never grant authority. Executable and excluded IDs are disjoint and together cover `planned_phase_ids`, so repository-wide inspection or validation cannot add or silently omit phases.
+
+Every worker prompt contains exactly one raw JSON object between `<!-- approved-scope:begin -->` and `<!-- approved-scope:end -->`. It copies the five typed scope fields without re-summarization. Before dispatch, commit the prompt and schema-v2 execution manifest into the unit's base commit; later validation reads both from that commit rather than trusting mutable worktree copies.
+
+### Schema migration
+
+Do not relabel a version-1 manifest as version 2. Re-read the canonical plan scope, make executable and excluded phase IDs disjoint, populate `agent_profiles` and `review_gate`, regenerate the unique scope block in every worker prompt, commit the packet, and then record version 2.
 
 Every implementation unit must include:
 
@@ -192,7 +209,7 @@ A boundary file must contain a `### PH-###-## — ...` section for every include
 
 Create one prompt per worker unit from `assets/worker-prompt-template.md`.
 
-The prompt is an execution packet, not a generic role description. It must identify exact paths, contracts, checks, commit requirements, and blocker behavior.
+The prompt is an execution packet, not a generic role description. It must identify exact paths, contracts, checks, commit requirements, and blocker behavior. Copy the five typed fields into the template's one raw JSON scope block. Reject duplicate blocks or keys. The validator cross-checks the prompt and execution manifest as stored in the unit's immutable base commit.
 
 ## Update discipline
 
