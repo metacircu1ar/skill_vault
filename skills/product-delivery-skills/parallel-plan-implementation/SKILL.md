@@ -3,9 +3,10 @@ name: parallel-plan-implementation
 description: Implements an approved, validated product or change plan through contract-first boundaries, evidence-backed external adapters, dependency-aware parallel waves, isolated Git worktrees, specialized implementor agents, ordered phase commits, and an optional parallel phase-commit review. Use for full-product, scoped feature, modernization or migration, and remediation or reliability plans under docs/implementation-plan/, and only after explicit implementation approval. After the approved scope is integrated and the repository is buildable and passing, it separately asks whether fresh reviewer agents should inspect every phase commit; the main agent verifies findings, amends fixes and practical regression tests into the responsible commits, safely replays descendants, and restores a clean passing tip.
 metadata:
   version: "2.3.0"
-  compatibility: "Requires a filesystem-enabled coding agent, Python 3 validation, Git worktrees, product build/test tooling, and a host that can spawn isolated subagents. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; substitutions need explicit approval. Optional review requires `phase-commit-reviewer`."
+  compatibility: "Requires a filesystem-enabled coding agent, Python 3 validation, Git worktrees, product build/test tooling, and a host that can spawn isolated subagents. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; substitutions need explicit approval. Optional review requires `phase-commit-reviewer` >= 1.3.0."
   companion-for: "product-implementation-planner"
   reviewer-skill: "phase-commit-reviewer"
+  reviewer-skill-version: ">=1.3.0"
 ---
 
 <!--
@@ -93,7 +94,7 @@ A fix belongs in the earliest responsible phase where the corrected implementati
 15. **Validate every integration.** Review the diff and run phase, contract, affected, and repository checks.
 16. **Create one reviewable phase commit.** Every integrated `PH-###-##` maps to one dedicated logical commit in deterministic phase order. Keep orchestration metadata separate.
 17. **Use one fresh reviewer per phase commit.** Reviewers do not receive one another's findings.
-18. **Give reviewers complete relevant context.** Include exact plan and boundary sections, contracts, repository rules, target diff, callers/callees, phase map, later-phase summaries, and frozen final state.
+18. **Give reviewers complete relevant context.** Include typed approved-scope fields and preservation obligations, exact plan and boundary sections, contracts, repository rules, target diff, callers/callees, phase map, later-phase summaries, and frozen final state.
 19. **Keep reviewers read-only.** They report findings and never edit, commit, rebase, amend, or merge.
 20. **The main agent verifies every finding.** Reproduce or prove it, deduplicate it, assign the root-cause phase, and record the disposition before changing code.
 21. **Add regression tests when practical.** Prefer failing-before/passing-after tests without distorting historical phase validity.

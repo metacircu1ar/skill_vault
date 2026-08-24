@@ -15,7 +15,7 @@ The result must identify:
 - `COMPLETED`: review completed without material limitations.
 - `COMPLETED_WITH_LIMITATIONS`: review completed, but listed missing tools or optional context reduced coverage.
 - `MODEL_BLOCKER`: required model/reasoning profile was unavailable without an approved substitute.
-- `SCOPE_BLOCKER`: target identity or required plan/boundary/contract context was missing or inconsistent.
+- `SCOPE_BLOCKER`: target identity, unique approved-scope data, external-fidelity classification or required evidence, or required plan/boundary/contract context was missing, malformed, duplicated, or inconsistent. An explicit empty preserved-behavior list is valid.
 - `FAILED`: the reviewer could not complete for another stated reason.
 
 Blocked or failed results normally contain no findings unless the orchestrator explicitly permits partial evidence; limitations must explain the state.

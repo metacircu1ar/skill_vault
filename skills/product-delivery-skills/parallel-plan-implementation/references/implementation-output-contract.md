@@ -100,7 +100,7 @@ Every worker prompt contains exactly one raw JSON object between `<!-- approved-
 
 ### Schema migration
 
-Do not relabel a version-1 manifest as version 2. Re-read the canonical plan scope, make executable and excluded phase IDs disjoint, populate `agent_profiles` and `review_gate`, regenerate the unique scope block in every worker prompt, commit the packet, and then record version 2.
+Do not relabel a version-1 manifest as version 2. Re-read the canonical plan scope, make executable and excluded phase IDs disjoint, populate `agent_profiles` and `review_gate`, regenerate the unique scope block in every worker prompt, commit the packet, and then record version 2. For a version-1 review package, regenerate reviewer prompts from the immutable review-baseline execution manifest, record each exact prompt's SHA-256, and create a version-2 review manifest.
 
 Every implementation unit must include:
 
@@ -225,7 +225,7 @@ Create this package only after the repository is clean, buildable, and passing a
 
 ### `parallel-review/review-manifest.json`
 
-Conform to `assets/review-manifest.schema.json`. Record:
+Conform to schema version 2 in `assets/review-manifest.schema.json`. Record:
 
 - explicit review authorization;
 - frozen original review baseline and pre-phase base;
@@ -235,6 +235,7 @@ Conform to `assets/review-manifest.schema.json`. Record:
 - exact phase order and one review record per phase;
 - original parent/commit and current rewritten commit;
 - explicit `external_fidelity_required` classification for every phase;
+- reviewer prompts that reproduce the review-baseline execution manifest's typed approved-scope fields exactly, plus each prompt's exact-byte `prompt_sha256`;
 - plan, boundary, contract, prompt, and findings paths;
 - one main-agent disposition per finding;
 - finding counts, regression-test count, validation results, final code checkpoint, and metadata commit.
@@ -245,7 +246,7 @@ Each fresh reviewer returns one file conforming to `assets/review-findings.schem
 
 ### `parallel-review/reviewer-prompts/<phase>.md`
 
-Create one complete prompt from `assets/reviewer-prompt-template.md` per phase. It must include the exact target and parent, frozen final baseline, `phase-commit-reviewer` skill requirement, the same `external_fidelity_required` value as the manifest, full relevant context paths, contracts, phase map, validation commands, requested/actual profile, strict read-only policy, and output path.
+Create one complete prompt from `assets/reviewer-prompt-template.md` per phase. It must include the exact target and parent, frozen final baseline, `phase-commit-reviewer` >= 1.3.0 requirement, the same `external_fidelity_required` value as the review manifest, exactly one raw JSON scope block copied from the execution manifest stored at the review baseline, full relevant context paths, contracts, phase map, validation commands, requested/actual profile, strict read-only policy, and output path. Record SHA-256 over the exact prompt bytes and dispatch only bytes matching that hash.
 
 ### `parallel-review/commit-map.md`
 

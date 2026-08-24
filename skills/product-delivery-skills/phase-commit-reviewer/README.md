@@ -2,7 +2,7 @@
 
 A read-only companion Agent Skill for `parallel-plan-implementation`.
 
-It reviews one phase commit using its exact diff plus complete product-plan, boundary, contract, repository, and final-state context. It returns up to 15 verified findings in a deterministic JSON shape and never edits code or history.
+It reviews one phase commit using its exact diff plus approved delivery scope, preserved-behavior obligations, plan, boundary, contract, repository, and final-state context. It returns up to 15 verified findings in a deterministic JSON shape and never edits code or history.
 
 Requested runtime profile:
 

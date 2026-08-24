@@ -23,6 +23,9 @@ The assignment must provide:
 - phase ID and component ID;
 - target commit and selected first parent;
 - frozen final review-baseline commit;
+- isolated checkout pinned to the target commit, or an immutable target snapshot;
+- one unambiguous approved-scope record containing delivery mode, requested outcome, impact cone, preserved behavior, and non-goals;
+- an explicit `external_fidelity_required` value and, when true, the applicable dossier, evidence gaps, test-double provenance, provider version/environment, and conformance results;
 - exact component plan and phase section;
 - exact component boundary and phase section;
 - consumed and produced canonical contracts;
@@ -32,7 +35,7 @@ The assignment must provide:
 - safe validation commands;
 - required JSON output schema.
 
-Missing identity, diff, plan, boundary, or required contract context is a `SCOPE_BLOCKER`. Optional missing context is recorded as a limitation.
+Missing identity, diff, approved-scope data, plan, boundary, required contract context, or external-fidelity classification is a `SCOPE_BLOCKER`. A malformed, duplicated, or contradictory scope record also blocks. An explicit empty preserved-behavior list is valid. When external fidelity is required, missing material provider evidence blocks; when it is false, do not infer external scope. Optional missing context is recorded as a limitation.
 
 ## Review scope
 
@@ -230,6 +233,7 @@ A reviewer recommends attribution. The main agent makes the final disposition an
 
 ## Output
 
+<!-- Deliberately package-local: the orchestrator ships review-findings.schema.json. -->
 Return one JSON object conforming to `review-findings.schema.json`.
 
 Every finding must include:

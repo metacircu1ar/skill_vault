@@ -1,8 +1,8 @@
 ---
 name: phase-commit-reviewer
-description: Performs a fresh, read-only, phase-aware xhigh review of exactly one implementation commit. Use when the parallel-plan-implementation orchestrator supplies a phase ID, target commit and parent, frozen final baseline, exact plan and boundary sections, canonical contracts, an explicit external-fidelity flag with applicable evidence, repository instructions, and a JSON output path. Reviews the introduced patch for correctness, security, contract and external-adapter fidelity, migration, reliability, test, and maintainability defects; verifies and ranks candidates; and returns structured findings without editing code or Git history.
+description: Performs a fresh, read-only, phase-aware xhigh review of exactly one implementation commit. Use when the parallel-plan-implementation orchestrator supplies a phase ID, target commit and parent, frozen final baseline, delivery scope and preserved-behavior obligations, exact plan and boundary sections, canonical contracts, an explicit external-fidelity flag with applicable evidence, repository instructions, and a JSON output path. Reviews the introduced patch for correctness, compatibility, preservation, security, contract and external-adapter fidelity, migration, reliability, test, and maintainability defects; verifies and ranks candidates; and returns structured findings without editing code or Git history.
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
   compatibility: Requires a Git repository and an isolated read-only checkout or worktree. The requested reviewer profile is `gpt-5.6-sol` with `xhigh` reasoning. Python 3 is optional for result validation. This skill never applies fixes, comments externally, commits, rebases, amends, or mutates production systems.
   companion-for: "parallel-plan-implementation"
   model: "gpt-5.6-sol"
@@ -12,7 +12,7 @@ metadata:
 <!--
 COMPLETE SKILL DESCRIPTION
 
-This skill performs one fresh, independent, read-only, phase-aware review of exactly one implementation-phase commit on behalf of the `parallel-plan-implementation` orchestrator. It is intended to run in an isolated checkout pinned to the target commit and uses the requested `gpt-5.6-sol` model with `xhigh` reasoning when available. The assignment must identify the exact phase and component, target commit and selected parent, frozen final integration baseline, exact plan and boundary sections, consumed and produced canonical contracts, repository instructions, complete relevant architecture and operational context, phase-to-commit mapping, later-phase summaries, safe validation commands, an explicit `external_fidelity_required` value, and the required JSON result destination. When that value is true, the assignment also supplies the applicable provider evidence, known gaps, test-double provenance, and conformance results.
+This skill performs one fresh, independent, read-only, phase-aware review of exactly one implementation-phase commit on behalf of the `parallel-plan-implementation` orchestrator. It is intended to run in an isolated checkout pinned to the target commit and uses the requested `gpt-5.6-sol` model with `xhigh` reasoning when available. The assignment must identify the exact phase and component, target commit and selected parent, frozen final integration baseline, typed delivery-scope fields and preserved-behavior obligations, exact plan and boundary sections, consumed and produced canonical contracts, repository instructions, complete relevant architecture and operational context, phase-to-commit mapping, later-phase summaries, safe validation commands, an explicit `external_fidelity_required` value, and the required JSON result destination. When that value is true, the assignment also supplies the applicable provider evidence, known gaps, test-double provenance, and conformance results.
 
 The reviewer first verifies model identity, commit identity, parent selection, target reachability from the final baseline, checkout immutability, changed-file scope, and phase mapping. It then reads the exact product intent and implementation contract: product description, architecture, component plan, phase obligations, boundary guarantees, contracts, data and interface design, security, testing, migrations, reliability, operations, delivery plan, enclosing implementation, affected callers and callees, tests, schemas, generated artifacts, configuration, and corresponding final-baseline code where later phases affect interpretation.
 
@@ -43,6 +43,7 @@ Do not start until the assignment provides:
 - exact component plan and phase section;
 - exact component boundary and phase section;
 - all consumed and produced canonical contracts;
+- delivery scope mode, requested outcome, impact cone, preserved-behavior obligations, and explicit non-goals copied from the execution manifest;
 - `external_fidelity_required: true|false`, supplied by the orchestrator rather than inferred by the reviewer;
 - when it is true, the applicable external-system dossier and evidence, known gaps, test-double provenance, provider version/environment, and available characterization or conformance results;
 - relevant product description, architecture, data, interface, security, testing, operations, migration, and delivery documents;
@@ -52,7 +53,7 @@ Do not start until the assignment provides:
 - requested and actual reviewer profile information;
 - required output location or return channel.
 
-Treat a missing `external_fidelity_required` value as `SCOPE_BLOCKER`. When it is true, treat missing material provider evidence needed for the assigned review as `SCOPE_BLOCKER`; when false, do not infer external scope or demand provider material. The same blocker applies to missing target identity, parent, plan, boundary, or required contract context. Record optional missing context as a limitation and never fill an evidence gap with assumed provider behavior.
+Treat an absent, malformed, duplicated, or contradictory approved-scope block—or any missing delivery scope mode, requested outcome, impact cone, preserved-behavior list, or non-goal list—as `SCOPE_BLOCKER`; an explicit empty preserved-behavior list is valid. Treat a missing `external_fidelity_required` value the same way. When it is true, treat missing material provider evidence needed for the assigned review as `SCOPE_BLOCKER`; when false, do not infer external scope or demand provider material. The same blocker applies to missing target identity, parent, plan, boundary, or required contract context. Record optional missing context as a limitation and never fill an evidence gap with assumed provider behavior.
 
 ## Non-negotiable rules
 
@@ -60,7 +61,7 @@ Treat a missing `external_fidelity_required` value as `SCOPE_BLOCKER`. When it i
 2. **Read-only.** Do not edit files, run fix modes, update snapshots, generate tracked artifacts, create commits, change branches, rebase, amend, merge, or post comments.
 3. **Pin the exact diff.** Use the selected parent-to-target diff, not a moving branch comparison.
 4. **Read complete relevant context.** A raw diff alone is insufficient. Read the exact phase plan, boundary, contracts, enclosing code, callers/callees, tests, and final integrated state.
-5. **Focus attribution.** Report defects introduced by the target commit or explicit phase obligations the target commit fails to satisfy.
+5. **Focus attribution.** Report defects introduced by the target commit or explicit phase obligations the target commit fails to satisfy. Supplied preservation, compatibility, coexistence, migration, and non-goal constraints are explicit obligations when the target can affect them.
 6. **Verify candidates.** Drop candidates contradicted by code, types, invariants, guards, contracts, or later evidence.
 7. **No filler.** An empty findings array is a valid high-quality result.
 8. **No silent model substitution.** Requested profile is `gpt-5.6-sol` / `xhigh`. Return `MODEL_BLOCKER` when it cannot be provisioned and no explicit substitution is recorded.
@@ -86,7 +87,7 @@ Treat a missing `external_fidelity_required` value as `SCOPE_BLOCKER`. When it i
 
 Read completely where relevant:
 
-1. product description and system architecture;
+1. product description, delivery scope mode, impact cone, preserved behavior, explicit non-goals, and system architecture;
 2. component plan and exact phase section;
 3. component boundary and exact phase section;
 4. produced and consumed canonical contracts;
@@ -109,6 +110,7 @@ Read `references/code-review-skill.md` and perform all required `xhigh` angles i
 - wrapper/adapter/cache/proxy correctness;
 - phase-plan compliance;
 - boundary and contract compliance;
+- preserved-behavior, backward-compatibility, coexistence, migration, and rollback fidelity;
 - external-system evidence and adapter fidelity when `external_fidelity_required` is true;
 - security, identity, privacy, and data integrity;
 - concurrency, reliability, migration, and operations;
@@ -179,6 +181,7 @@ The assignment is complete when:
 
 - exact commit, parent, phase, and final-baseline identities are verified;
 - all required context was read or limitations were recorded;
+- preserved-behavior and compatibility obligations were checked against the target and affected callers, data, interfaces, and operational paths;
 - when `external_fidelity_required` is true, conclusions are grounded in supplied provider evidence rather than mock-only agreement;
 - every review angle was considered;
 - every reported candidate survived verification;

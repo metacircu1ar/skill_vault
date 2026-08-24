@@ -23,11 +23,18 @@ Return `MODEL_BLOCKER` without reviewing when the requested profile is unavailab
 - **Findings output:** `docs/implementation-plan/parallel-implementation/parallel-review/findings/<phase-id-lowercase>.json`
 - **External fidelity required:** `<true|false>`
 
+## Approved delivery scope
+
+<!-- approved-scope:begin -->
+{"delivery_scope_mode":"<full product|scoped change|modernization or migration|remediation or reliability>","requested_outcome":"<JSON-escaped string>","impact_cone":"<JSON-escaped string>","preserved_behavior":["<exact entries>"],"non_goals":["<exact entries>"]}
+<!-- approved-scope:end -->
+
 You are one fresh, independent, read-only reviewer for exactly this phase commit. Verify that the supplied checkout is pinned to `<target-commit>`; use Git object reads to compare with the frozen final baseline. Do not edit, format, generate, commit, merge, rebase, amend, create branches, post external comments, or mutate production systems.
+Treat the supplied preservation, compatibility, coexistence, migration, rollback, and non-goal constraints as explicit review obligations whenever the target can affect them.
 
 ## Required skill and protocol
 
-1. Load the installed `phase-commit-reviewer/SKILL.md`.
+1. Load installed `phase-commit-reviewer` version `1.3.0` or newer; return `SCOPE_BLOCKER` when that compatible version is unavailable.
 2. Read its `references/code-review-skill.md` completely.
 3. Return a result conforming exactly to the reviewer-result JSON schema supplied by that installed skill.
 4. When the companion reviewer skill is not installed, return `SCOPE_BLOCKER`; do not improvise a reduced review.

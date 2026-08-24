@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import hashlib
 import json
 import re
 import subprocess
@@ -55,6 +56,15 @@ DISPOSITION_STATUSES = {"pending", "fixed", "blocked", "not-applicable"}
 FINDING_VERDICTS = {"CONFIRMED", "PLAUSIBLE"}
 PROFILE_STATUSES = {"confirmed", "host-unverifiable", "unavailable", "substituted"}
 COUNT_KEYS = {"reported", "confirmed", "rejected", "duplicate", "already_fixed", "reassigned", "fixed", "blocked", "tests_added"}
+DELIVERY_SCOPE_MODES = {
+    "full product", "scoped change", "modernization or migration", "remediation or reliability"
+}
+PROMPT_SCOPE_BEGIN = "<!-- approved-scope:begin -->"
+PROMPT_SCOPE_END = "<!-- approved-scope:end -->"
+PROMPT_SCOPE_KEYS = {
+    "delivery_scope_mode", "requested_outcome", "impact_cone",
+    "preserved_behavior", "non_goals",
+}
 
 
 def normalize_heading(value: str) -> str:
@@ -78,13 +88,24 @@ def parse_datetime(value: Any, label: str, errors: list[str]) -> datetime | None
     return parsed
 
 
+def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate key {key!r}")
+        result[key] = value
+    return result
+
+
 def read_json(path: Path, errors: list[str]) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicate_keys
+        )
     except OSError as exc:
         errors.append(f"{path}: cannot read: {exc}")
         return {}
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, ValueError) as exc:
         errors.append(f"{path}: invalid JSON: {exc}")
         return {}
     if not isinstance(value, dict):
@@ -102,6 +123,33 @@ def required_keys(value: Any, required: Iterable[str], label: str, errors: list[
         errors.append(f"{label}: missing keys: {', '.join(missing)}")
         return False
     return True
+
+
+def parse_prompt_scope(text: str, label: str, errors: list[str]) -> dict[str, Any] | None:
+    if text.count(PROMPT_SCOPE_BEGIN) != 1 or text.count(PROMPT_SCOPE_END) != 1:
+        errors.append(f"{label}: expected exactly one approved-scope block")
+        return None
+    start = text.find(PROMPT_SCOPE_BEGIN) + len(PROMPT_SCOPE_BEGIN)
+    end = text.find(PROMPT_SCOPE_END, start)
+    if end < start:
+        errors.append(f"{label}: approved-scope markers are out of order")
+        return None
+    try:
+        value = json.loads(
+            text[start:end].strip(), object_pairs_hook=reject_duplicate_keys
+        )
+    except (json.JSONDecodeError, ValueError) as exc:
+        errors.append(f"{label}: invalid approved-scope JSON: {exc}")
+        return None
+    if not isinstance(value, dict) or set(value) != PROMPT_SCOPE_KEYS:
+        actual = set(value) if isinstance(value, dict) else set()
+        errors.append(
+            f"{label}: approved-scope keys differ; "
+            f"missing={sorted(PROMPT_SCOPE_KEYS - actual)}, "
+            f"extra={sorted(actual - PROMPT_SCOPE_KEYS)}"
+        )
+        return None
+    return value
 
 
 def validate_markdown(path: Path, headings: Iterable[str], errors: list[str]) -> None:
@@ -123,6 +171,24 @@ def commit_exists(repo: Path, commit: Any) -> bool:
         ["git", "-C", str(repo), "cat-file", "-e", f"{commit}^{{commit}}"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
     ).returncode == 0
+
+
+def git_show_json(repo: Path, commit: Any, relative_path: str) -> dict[str, Any] | None:
+    if not isinstance(commit, str) or not COMMIT_RE.fullmatch(commit):
+        return None
+    result = subprocess.run(
+        ["git", "-C", str(repo), "show", f"{commit}:{relative_path}"],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        value = json.loads(
+            result.stdout.decode("utf-8"), object_pairs_hook=reject_duplicate_keys
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def resolve_ref(repo: Path, ref: str) -> str | None:
@@ -189,7 +255,7 @@ def validate_profile(value: Any, errors: list[str], *, active: bool) -> None:
         if not isinstance(value.get(key), str) or not value.get(key, "").strip():
             errors.append(f"reviewer_profile.{key} must be non-empty")
     status = value.get("selection_status")
-    if status not in PROFILE_STATUSES:
+    if not isinstance(status, str) or status not in PROFILE_STATUSES:
         errors.append("reviewer_profile.selection_status is invalid")
     approved = value.get("substitution_approved")
     if not isinstance(approved, bool):
@@ -204,7 +270,7 @@ def validate_profile(value: Any, errors: list[str], *, active: bool) -> None:
     if status == "unavailable" and approved is True:
         errors.append("unavailable reviewer profile cannot claim substitution approval")
     ready = status == "confirmed" or (
-        status in {"host-unverifiable", "substituted"}
+        status in ("host-unverifiable", "substituted")
         and approved is True
     )
     if active and not ready:
@@ -222,7 +288,7 @@ def validate_findings(path: Path, phase: dict[str, Any], profile: dict[str, Any]
         return []
     if data.get("schema_version") != 1:
         errors.append(f"{path}: schema_version must equal 1")
-    if data.get("status") not in RESULT_STATUSES:
+    if not isinstance(data.get("status"), str) or data.get("status") not in RESULT_STATUSES:
         errors.append(f"{path}: invalid status")
     comparisons = {
         "phase_id": phase.get("phase_id"),
@@ -247,7 +313,7 @@ def validate_findings(path: Path, phase: dict[str, Any], profile: dict[str, Any]
     if len(findings) > 15:
         errors.append(f"{path}: findings exceeds cap of 15")
     result_status = data.get("status")
-    if result_status in {"MODEL_BLOCKER", "SCOPE_BLOCKER", "FAILED"} and findings:
+    if result_status in ("MODEL_BLOCKER", "SCOPE_BLOCKER", "FAILED") and findings:
         errors.append(f"{path}: blocked or failed result must not contain findings")
     if result_status == "MODEL_BLOCKER" and profile.get("selection_status") != "unavailable":
         errors.append(f"{path}: MODEL_BLOCKER requires an unavailable reviewer profile")
@@ -272,7 +338,7 @@ def validate_findings(path: Path, phase: dict[str, Any], profile: dict[str, Any]
             errors.append(f"{label}: duplicate finding ID")
         else:
             seen.add(finding_id)
-        if finding.get("verdict") not in FINDING_VERDICTS:
+        if not isinstance(finding.get("verdict"), str) or finding.get("verdict") not in FINDING_VERDICTS:
             errors.append(f"{label}: invalid verdict")
         owner = finding.get("recommended_owner_phase")
         if not isinstance(owner, str) or not PHASE_RE.fullmatch(owner):
@@ -317,12 +383,12 @@ def main() -> int:
         "final_code_checkpoint", "metadata_commit", "updated_at",
     )
     required_keys(manifest, top_required, "manifest", errors)
-    if manifest.get("schema_version") != 1:
-        errors.append("manifest.schema_version must equal 1")
+    if manifest.get("schema_version") != 2:
+        errors.append("manifest.schema_version must equal 2")
     status = manifest.get("status")
-    if status not in REVIEW_STATUSES:
+    if not isinstance(status, str) or status not in REVIEW_STATUSES:
         errors.append("manifest.status is invalid")
-    active = status not in {"preparing", "blocked"}
+    active = status not in ("preparing", "blocked")
     validate_profile(manifest.get("reviewer_profile"), errors, active=active)
     profile = manifest.get("reviewer_profile") if isinstance(manifest.get("reviewer_profile"), dict) else {}
 
@@ -352,17 +418,17 @@ def main() -> int:
         errors.append("manifest.backup_ref must be non-empty")
     else:
         resolved = resolve_ref(repo, backup_ref)
-        if status in {"rewriting", "validating", "completed"} and resolved != baseline:
+        if status in ("rewriting", "validating", "completed") and resolved != baseline:
             errors.append("backup_ref must resolve to the original review baseline")
 
     publication = manifest.get("publication_status")
-    if publication not in {"unpublished", "published", "protected", "unknown"}:
+    if publication not in ("unpublished", "published", "protected", "unknown"):
         errors.append("manifest.publication_status is invalid")
     if not isinstance(manifest.get("force_push_authorized"), bool):
         errors.append("manifest.force_push_authorized must be boolean")
-    if publication in {"published", "protected", "unknown"} and manifest.get("history_strategy") != "linearized-review-branch":
+    if publication in ("published", "protected", "unknown") and manifest.get("history_strategy") != "linearized-review-branch":
         errors.append("published, protected, or unknown history requires linearized-review-branch")
-    if publication in {"published", "protected"} and manifest.get("force_push_authorized") is False:
+    if publication in ("published", "protected") and manifest.get("force_push_authorized") is False:
         warnings.append("remote history remains intentionally unchanged")
 
     phase_order = manifest.get("phase_order")
@@ -385,7 +451,7 @@ def main() -> int:
     ):
         assert isinstance(review_execution, dict)
         execution_mode = review_execution.get("mode")
-        if execution_mode not in {"pending", "single-phase", "parallel", "bounded-parallel", "blocked"}:
+        if execution_mode not in ("pending", "single-phase", "parallel", "bounded-parallel", "blocked"):
             errors.append("manifest.review_execution.mode is invalid")
         max_parallel_reviewers = review_execution.get("max_parallel_reviewers")
         if not isinstance(max_parallel_reviewers, int) or max_parallel_reviewers < 0:
@@ -410,8 +476,6 @@ def main() -> int:
             if not isinstance(phase_ids, list) or not phase_ids:
                 errors.append(f"{label}.phase_ids must be a non-empty array")
                 continue
-            if len(phase_ids) != len(set(phase_ids)):
-                errors.append(f"{label}.phase_ids contains duplicates")
             valid_phases: list[str] = []
             for phase_id in phase_ids:
                 if not isinstance(phase_id, str) or not PHASE_RE.fullmatch(phase_id):
@@ -422,18 +486,66 @@ def main() -> int:
                     errors.append(f"phase {phase_id} appears in multiple review batches")
                 else:
                     phase_to_batch[phase_id] = batch_id
+            if len(valid_phases) != len(set(valid_phases)):
+                errors.append(f"{label}.phase_ids contains duplicates")
             batch_by_id[batch_id] = valid_phases
             if isinstance(max_parallel_reviewers, int) and max_parallel_reviewers >= 0 and len(valid_phases) > max_parallel_reviewers:
                 errors.append(f"{label} exceeds max_parallel_reviewers")
 
-    if status not in {"preparing", "blocked"} and set(phase_to_batch) != set(phase_order):
+    if status not in ("preparing", "blocked") and set(phase_to_batch) != set(phase_order):
         errors.append(
             "review batches must cover phase_order exactly; "
             f"missing={sorted(set(phase_order)-set(phase_to_batch))}, "
             f"extra={sorted(set(phase_to_batch)-set(phase_order))}"
         )
 
-    execution = read_json(repo / PARALLEL_ROOT / "execution-manifest.json", errors)
+    execution = git_show_json(
+        repo, baseline, (PARALLEL_ROOT / "execution-manifest.json").as_posix()
+    )
+    if execution is None:
+        errors.append(
+            "review_baseline_commit must contain a valid immutable execution-manifest.json"
+        )
+        execution = {}
+    elif execution.get("schema_version") != 2:
+        errors.append("review baseline execution manifest schema_version must equal 2")
+    execution_scope = execution.get("approved_scope")
+    delivery_scope_mode: Any = None
+    requested_outcome: Any = None
+    impact_cone: Any = None
+    preserved_behavior: Any = None
+    non_goals: Any = None
+    scope_error_count = len(errors)
+    if required_keys(
+        execution_scope,
+        (
+            "delivery_scope_mode", "requested_outcome", "impact_cone",
+            "preserved_behavior", "non_goals",
+        ),
+        "execution.approved_scope",
+        errors,
+    ):
+        assert isinstance(execution_scope, dict)
+        delivery_scope_mode = execution_scope.get("delivery_scope_mode")
+        requested_outcome = execution_scope.get("requested_outcome")
+        impact_cone = execution_scope.get("impact_cone")
+        preserved_behavior = execution_scope.get("preserved_behavior")
+        non_goals = execution_scope.get("non_goals")
+        if not isinstance(delivery_scope_mode, str) or delivery_scope_mode not in DELIVERY_SCOPE_MODES:
+            errors.append("execution.approved_scope.delivery_scope_mode is invalid")
+        for key, value in (("requested_outcome", requested_outcome), ("impact_cone", impact_cone)):
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"execution.approved_scope.{key} must be a non-empty string")
+        for key, value in (("preserved_behavior", preserved_behavior), ("non_goals", non_goals)):
+            if not isinstance(value, list) or any(
+                not isinstance(item, str) or not item.strip() for item in value
+            ):
+                errors.append(f"execution.approved_scope.{key} must be an array of non-empty strings")
+            elif len(value) != len(set(value)):
+                errors.append(f"execution.approved_scope.{key} must not contain duplicates")
+        if non_goals == []:
+            errors.append("execution.approved_scope.non_goals must not be empty")
+    scope_prompt_values_valid = len(errors) == scope_error_count
     units = execution.get("units") if isinstance(execution.get("units"), list) else []
     unit_by_id = {u.get("id"): u for u in units if isinstance(u, dict) and isinstance(u.get("id"), str)}
     execution_contracts = execution.get("contracts") if isinstance(execution.get("contracts"), list) else []
@@ -461,7 +573,7 @@ def main() -> int:
             "phase_id", "component_id", "original_commit", "original_parent",
             "current_commit", "review_baseline_commit", "plan_path", "plan_section",
             "boundary_path", "boundary_section", "contract_ids",
-            "external_fidelity_required", "prompt_path",
+            "external_fidelity_required", "prompt_path", "prompt_sha256",
             "findings_path", "reviewer_instance_id", "review_batch_id",
             "started_at", "completed_at", "status", "limitations",
         )
@@ -475,10 +587,24 @@ def main() -> int:
             errors.append(f"duplicate phase review: {phase_id}")
             continue
         review_by_phase[phase_id] = review
+        contract_ids = review.get("contract_ids")
+        if not isinstance(contract_ids, list) or any(
+            not isinstance(value, str) or not re.fullmatch(r"CTR-\d{3,}", value)
+            for value in contract_ids
+        ):
+            errors.append(f"{label}.contract_ids must be an array of CTR-### IDs")
+            contract_ids = []
+        elif len(contract_ids) != len(set(contract_ids)):
+            errors.append(f"{label}.contract_ids contains duplicates")
         external_fidelity_required = review.get("external_fidelity_required")
         if not isinstance(external_fidelity_required, bool):
             errors.append(f"{label}.external_fidelity_required must be boolean")
-        if review.get("status") not in PHASE_STATUSES:
+        prompt_sha256 = review.get("prompt_sha256")
+        if not isinstance(prompt_sha256, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", prompt_sha256
+        ):
+            errors.append(f"{label}.prompt_sha256 must be 64 lower-case hex characters")
+        if not isinstance(review.get("status"), str) or review.get("status") not in PHASE_STATUSES:
             errors.append(f"{label}.status is invalid")
         reviewer_instance = review.get("reviewer_instance_id")
         if not isinstance(reviewer_instance, str) or not reviewer_instance.strip():
@@ -538,7 +664,13 @@ def main() -> int:
             if not prompt_path.is_file():
                 errors.append(f"{label}.prompt_path does not exist")
             else:
-                text = prompt_path.read_text(encoding="utf-8", errors="replace")
+                prompt_bytes = prompt_path.read_bytes()
+                text = prompt_bytes.decode("utf-8", errors="replace")
+                actual_prompt_sha256 = hashlib.sha256(prompt_bytes).hexdigest()
+                if isinstance(prompt_sha256, str) and actual_prompt_sha256 != prompt_sha256:
+                    errors.append(
+                        f"{label}.prompt_sha256 does not match the exact prompt bytes"
+                    )
                 prompt_expectations = (
                     phase_id,
                     str(review.get("component_id")),
@@ -563,7 +695,21 @@ def main() -> int:
                         errors.append(
                             f"{label}.prompt_path missing {expected_flag!r}"
                         )
-                for contract_id in review.get("contract_ids", []):
+                actual_scope = parse_prompt_scope(text, f"{label}.prompt_path", errors)
+                if scope_prompt_values_valid:
+                    expected_scope = {
+                        "delivery_scope_mode": delivery_scope_mode,
+                        "requested_outcome": requested_outcome,
+                        "impact_cone": impact_cone,
+                        "preserved_behavior": preserved_behavior,
+                        "non_goals": non_goals,
+                    }
+                    if actual_scope is not None and actual_scope != expected_scope:
+                        errors.append(
+                            f"{label}.prompt_path approved-scope block does not match "
+                            "the review-baseline execution manifest"
+                        )
+                for contract_id in contract_ids:
                     if contract_id not in text:
                         errors.append(f"{label}.prompt_path missing contract ID {contract_id}")
                     contract = contract_by_id.get(contract_id)
@@ -573,7 +719,7 @@ def main() -> int:
                             f"{label}.prompt_path missing canonical contract path {canonical_path!r}"
                         )
         findings_path = repo_path(repo, review.get("findings_path"), f"{label}.findings_path", errors)
-        if review.get("status") not in {"planned", "running", "model-blocked", "scope-blocked", "failed", "blocked"} or status in {"findings-received", "verifying-findings", "rewriting", "validating", "completed"}:
+        if review.get("status") not in ("planned", "running", "model-blocked", "scope-blocked", "failed", "blocked") or status in ("findings-received", "verifying-findings", "rewriting", "validating", "completed"):
             if findings_path is None or not findings_path.is_file():
                 errors.append(f"{label}.findings_path does not exist")
             else:
@@ -596,7 +742,7 @@ def main() -> int:
             if max_parallel_reviewers != 1:
                 errors.append("a one-phase completed review must record max_parallel_reviewers = 1")
         elif len(phase_order) > 1:
-            if execution_mode not in {"parallel", "bounded-parallel"}:
+            if execution_mode not in ("parallel", "bounded-parallel"):
                 errors.append("multi-phase completed review must use parallel or bounded-parallel mode")
             if not isinstance(max_parallel_reviewers, int) or max_parallel_reviewers < 2:
                 errors.append("multi-phase completed review requires max_parallel_reviewers >= 2")
@@ -621,7 +767,7 @@ def main() -> int:
                     overlap_observed = overlap_observed or batch_overlap
             if not overlap_observed:
                 errors.append("multi-phase completed review lacks evidence of actual parallel execution")
-        if execution_mode in {"pending", "blocked"}:
+        if execution_mode in ("pending", "blocked"):
             errors.append("completed review cannot use pending or blocked execution mode")
 
     dispositions = manifest.get("finding_dispositions")
@@ -644,9 +790,9 @@ def main() -> int:
             disposition_by_finding[fid] = disposition
         if fid not in all_findings:
             errors.append(f"{label}: finding_id is not present in reviewer reports")
-        if disposition.get("disposition") not in DISPOSITIONS:
+        if not isinstance(disposition.get("disposition"), str) or disposition.get("disposition") not in DISPOSITIONS:
             errors.append(f"{label}.disposition is invalid")
-        if disposition.get("status") not in DISPOSITION_STATUSES:
+        if not isinstance(disposition.get("status"), str) or disposition.get("status") not in DISPOSITION_STATUSES:
             errors.append(f"{label}.status is invalid")
         assigned = disposition.get("assigned_phase")
         if assigned is not None and assigned not in phase_order:

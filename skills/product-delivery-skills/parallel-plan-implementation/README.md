@@ -26,7 +26,7 @@ The review stage must not imitate a reduced reviewer when `phase-commit-reviewer
 ## Core guarantees
 
 - contract-first boundaries rather than prose-only coordination;
-- one canonical plan scope, schema-v2 execution authority, and unique scope blocks in immutable worker packets;
+- one canonical plan scope, schema-v2 execution authority, and unique scope blocks in immutable worker/reviewer packets;
 - one worktree and one fresh implementor per eligible phase;
 - dependency-aware waves and explicit shared-path ownership;
 - one reviewable logical integration commit per phase;

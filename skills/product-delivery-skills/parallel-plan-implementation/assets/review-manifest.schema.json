@@ -31,7 +31,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "status": {
       "enum": [
@@ -303,6 +303,7 @@
         "contract_ids",
         "external_fidelity_required",
         "prompt_path",
+        "prompt_sha256",
         "findings_path",
         "reviewer_instance_id",
         "status",
@@ -367,6 +368,10 @@
         "prompt_path": {
           "type": "string",
           "minLength": 1
+        },
+        "prompt_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         },
         "findings_path": {
           "type": "string",
