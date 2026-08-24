@@ -1,8 +1,20 @@
 # Planning Output Contract
 
+## Delivery-scope metadata
+
+In the top metadata of `00-product-description.md`, record exactly one canonical JSON object between these literal markers:
+
+```text
+<!-- delivery-scope:begin -->
+{"schema_version":1,"delivery_scope_mode":"scoped change","requested_outcome":"Add account export without changing existing account workflows.","impact_cone":"Export endpoint, authorization, audit records, storage reads, API documentation, and regression tests.","preserved_behavior":["Existing account reads and writes remain compatible."],"non_goals":["Redesigning account storage."],"planned_phase_ids":["PH-001-00"],"authorized_phase_ids":["PH-001-00"],"applicable_documents":["03-interfaces-and-integrations.md","90-security-reliability-and-operations.md","91-testing-and-quality.md"],"preserved_document_sources":{"01-system-architecture.md":"docs/architecture.md remains authoritative; no topology change.","02-domain-and-data.md":"docs/data-model.md remains authoritative; export is read-only."}}
+<!-- delivery-scope:end -->
+```
+
+Use one of the four lower-case modes: `full product`, `scoped change`, `modernization or migration`, or `remediation or reliability`. Keep the key set exact. `planned_phase_ids` names the phases in this delivery package; `authorized_phase_ids` is the subset approved to start. `applicable_documents` selects from `01`, `02`, `03`, `90`, and `91`; `preserved_document_sources` must cover every omitted concern document with an authoritative source or a concise reason its existing treatment remains valid. Every bounded mode requires at least one explicit `preserved_behavior` statement; the array may be empty only for `full product`. An explicit empty `authorized_phase_ids` array is valid; `non_goals` and `planned_phase_ids` are not empty. The prose sections and planning index explain this record but do not redefine it.
+
 ## Default directory tree
 
-Create this structure unless a document is genuinely inapplicable. Never omit a relevant concern merely to reduce file count.
+For `Full product`, create this structure and mark all five concern documents applicable. Never omit a relevant concern merely to reduce file count.
 
 ```text
 docs/implementation-plan/
@@ -26,6 +38,8 @@ docs/implementation-plan/
 ```
 
 All documents must use relative links and agree on names, IDs, boundaries, contracts, data ownership, and phase dependencies.
+
+For a bounded mode, keep the same planning root but update or create only the artifacts needed by the approved scope and impact cone. `README.md`, `00-product-description.md`, `92-delivery-roadmap.md`, `93-implementation-units.md`, `99-open-questions.md`, and a component plan for every affected component are required. Create or update `01`, `02`, `03`, `90`, and `91` only when the change affects those concerns. Reuse authoritative existing architecture or operational documents by relative link when they remain valid, and identify them in the index; do not create placeholder documents or copy unaffected product design merely to resemble a full-product package. External-system evidence remains conditional on a material external dependency.
 
 ## Stable identifiers
 
@@ -75,22 +89,25 @@ Required sections:
 1. Planning status and phase-readiness statement
 2. Source documents and repository evidence
 3. Product summary
-4. Goals and non-goals
-5. Architecture summary
-6. Major components and ownership table, including `CMP-###` IDs
-7. System-wide delivery-phase summary
-8. Component and phase identifier registry
-9. Document index
-10. Requirement-to-component-to-phase traceability summary
-11. Blocking decisions, deferred gates, and highest risks
-12. Implementation handoff readiness
-13. How to use and maintain the plan
+4. Delivery scope and impact cone
+5. Goals and non-goals
+6. Architecture summary
+7. Major components and ownership table, including only in-scope `CMP-###` IDs for bounded work
+8. System-wide delivery-phase summary, scoped to the approved change for bounded work
+9. Component and phase identifier registry
+10. Document index
+11. Requirement-to-component-to-phase traceability summary
+12. Blocking decisions, deferred gates, and highest risks
+13. Implementation handoff readiness
+14. How to use and maintain the plan
 
 The readiness statement must explain why the set is `Draft`, `Blocked`, or `Ready for implementation` and identify exactly which `PH-###-##` IDs are authorized.
 
 ## `00-product-description.md`
 
 Create this before architecture documents. It is the normalized product contract whether the source began as a formal specification, rough idea, or user interview.
+
+Its top metadata must include the canonical delivery-scope block. For a bounded mode, describe the requested change, current and target behavior, impact cone, preserved behavior, and explicit non-goals; requirements and acceptance criteria are scoped to that change rather than copied from the entire product.
 
 Required sections:
 
@@ -99,7 +116,7 @@ Required sections:
 3. Outcomes and success measures
 4. Users, actors, and roles
 5. Product surfaces and operating model
-6. First production release scope
+6. Delivery scope and release boundary
 7. Primary and exceptional workflows
 8. Functional requirements
 9. Non-functional requirements
@@ -176,7 +193,7 @@ Every internal boundary candidate must name its provider `CMP-###`, consumer `CM
 
 ## `components/<component>.md`
 
-Create one file for every major component. At the top include:
+Create one file for every in-scope component. For a full product this means every major component; for bounded work it means affected components and necessary shared foundations, using existing component boundaries when they remain sound. At the top include:
 
 ```markdown
 - Component ID: `CMP-001`
@@ -198,10 +215,14 @@ Required sections:
 12. Phased implementation
 13. Risks and open decisions
 
-Under **Phased implementation**, use at least two phase headings unless a documented reason justifies one atomic phase:
+Under **Phased implementation**, use at least two phase headings for full-product or multi-stage work. A bounded change may use one phase when the document explains why it is an atomic reviewable increment:
 
 ```markdown
 ### PH-001-00 — Descriptive outcome
+
+#### Atomicity rationale
+
+<Required when this is the only planned phase in an in-scope component; explain why it is one independently reviewable increment.>
 
 #### Objective
 
@@ -241,6 +262,7 @@ Rules for phase sections:
 - `Boundary outputs` must identify the guarantees, interfaces, schemas, symbols, behaviors, or artifacts later units may consume.
 - `Expected write domains` should name likely repository paths when the repository exists; otherwise name artifact classes or future module ownership.
 - `Preliminary parallelization` must classify the phase as independent, contract-bound, implementation-bound, or decision-gated, explain why, and identify shared files, schemas, generated artifacts, global configuration, or semantic discovery that requires serialization.
+- A bounded component with one planned phase must include a non-empty `Atomicity rationale`; the validator ignores unrelated historical phases and component plans outside `planned_phase_ids`.
 - Tasks must name the artifact, capability, contract, or operational outcome being created.
 
 ## `90-security-reliability-and-operations.md`

@@ -1,9 +1,9 @@
 ---
 name: product-implementation-planner
-description: Use this skill to create or normalize a product description and turn it, plus repository and relevant external-system evidence, into a complete production-grade architecture and phased implementation plan under docs/implementation-plan/. Use for rough product ideas, PRDs, requirements, feature specifications, existing repositories, migrations, or start-to-finish delivery roadmaps. It asks for a missing description, clarifies principal decisions, records safe deferrals, assigns stable component and phase IDs, and prepares dependency-aware plans for an optional handoff to the parallel-plan-implementation skill. It does not implement product code until the user explicitly approves the handoff.
+description: Use this skill to create or normalize a product or change description and turn it, plus repository and relevant external-system evidence, into a production-grade architecture and phased implementation plan complete for the approved delivery scope under docs/implementation-plan/. Use for greenfield products, features in existing repositories, modernization or migration, remediation or reliability work, and start-to-finish delivery roadmaps. It clarifies principal decisions, records safe deferrals, assigns stable component and phase IDs, and prepares dependency-aware plans for an optional handoff to the parallel-plan-implementation skill. It does not implement product code until the user explicitly approves the handoff.
 metadata:
-  version: "2.2.0"
-  compatibility: "Requires a filesystem-enabled coding agent that can inspect a repository and write Markdown under docs/. Optional implementation requires `parallel-plan-implementation`; optional review requires `phase-commit-reviewer`. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; host support and explicit substitution approval are required. Python 3 is optional for validation."
+  version: "2.3.0"
+  compatibility: "Requires a filesystem-enabled coding agent that can inspect a repository, write Markdown under docs/, and run Python 3 for structural validation. Optional implementation requires `parallel-plan-implementation`; optional review requires `phase-commit-reviewer`. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; host support and explicit substitution approval are required."
   companion-skill: parallel-plan-implementation
   reviewer-skill: phase-commit-reviewer
 ---
@@ -11,11 +11,11 @@ metadata:
 <!--
 COMPLETE SKILL DESCRIPTION
 
-This planning-only skill turns a rough product idea, an attached or repository-based product-description document, a PRD, requirements, or an existing product repository into a complete, production-grade architecture and start-to-finish implementation plan under `docs/implementation-plan/`. When invocation does not include a usable product description, it first asks the user for a free-form description of the product, intended users, principal workflows, desired surfaces, first-release scope, integrations, constraints, and delivery expectations. It then normalizes all supplied source material without silently changing its meaning and creates the canonical `00-product-description.md` document before making architectural choices.
+This planning-only skill turns a rough product idea, feature or change request, modernization or migration goal, remediation objective, PRD, requirements, or existing product repository into a production-grade architecture and implementation plan complete for the approved delivery scope under `docs/implementation-plan/`. When invocation does not include a usable product or change description, it first asks for the requested outcome, users and workflows affected, scope boundary, preserved behavior, integrations, constraints, and delivery expectations. It then normalizes all supplied source material without silently changing its meaning and creates or updates the canonical `00-product-description.md` document before making architectural choices.
 
 The skill asks a consolidated, tailored set of principal-decision questions whose answers materially affect architecture, including hosting and operating model, product surfaces, tenancy and isolation, identity and authorization, data sensitivity and compliance, availability and scale, integrations and systems of record, migration and backward compatibility, billing or licensing, technology constraints, team capabilities, budget, and delivery deadlines. It allows the user to decide immediately, accept a recommendation, or defer a decision. Every unknown is explicitly classified as blocking now, decision-gated, or non-blocking; every deferred decision receives a stable identifier, bounded impact, provisional invariants, affected phases, safe work, owner when known, a latest responsible decision point, and a revision path.
 
-After intake, the skill inspects relevant repository evidence and produces coordinated documents for product definition, requirements, system architecture, domain and data design, interfaces and integrations, every major component, security, reliability, operations, testing, migration, rollout, delivery sequencing, risks, open questions, and traceability. Each component receives its own implementation plan split into well-separated phases with stable component and phase IDs, objectives, prerequisites, scope, concrete tasks, deliverables, dependencies, contracts, write domains, validation, migration and operational work, exit criteria, risks, and deferred work. It identifies dependency types, candidate contract boundaries, shared-state constraints, and preliminary parallel execution waves so that implementation can later be orchestrated without architectural guesswork.
+After intake, the skill classifies the delivery as full product, scoped change, modernization or migration, or remediation or reliability work. It inspects the repository broadly enough to establish the impact cone and deeply enough in affected areas, then produces or updates only the planning artifacts needed to cover the approved change, affected dependencies and interfaces, preserved behavior, migration and rollback, regression risk, and operational consequences. Full-product work covers every major component; bounded work plans only affected components and necessary shared foundations. It identifies dependency types, candidate contract boundaries, shared-state constraints, and preliminary parallel execution waves so that implementation can later be orchestrated without architectural guesswork or scope expansion.
 
 The skill validates the planning set, records whether it is Blocked, Draft, or Ready for implementation, and never edits product source code, dependencies, migrations, infrastructure, or runtime configuration while planning. Once all plans are complete and valid, it asks the user whether implementation should proceed through the companion `parallel-plan-implementation` skill. No implementation or review begins without the appropriate explicit approval.
 
@@ -30,7 +30,18 @@ Explicit non-goals: writing product code during planning, hiding ambiguity, inve
 
 Act as the principal product architect and implementation-planning lead.
 
-First establish a usable product-description document. Then transform that description and the available repository context into a complete, internally consistent blueprint for building, operating, launching, and evolving the product. Stay in planning mode until the user explicitly approves implementation after the plans are complete.
+First establish a usable product or change description. Then transform it and the available repository context into an internally consistent blueprint complete for the approved delivery scope. Stay in planning mode until the user explicitly approves implementation after the plans are complete.
+
+## Delivery scope modes
+
+Classify the work before decomposing it and record one mode in `00-product-description.md`:
+
+- **Full product:** a greenfield product or whole-product redesign whose approved scope includes the complete product lifecycle;
+- **Scoped change:** a feature or bounded behavior change in an existing product;
+- **Modernization or migration:** incremental replacement, platform upgrade, replatforming, or legacy-service migration that must preserve compatibility while old and new paths coexist;
+- **Remediation or reliability:** a bounded correctness, security, performance, operability, or resilience improvement.
+
+For bounded modes, treat the existing code, contracts, tests, documentation, data, and deployed behavior as baseline evidence—not as permission to redesign the product. Define the **impact cone** as the requested change plus affected callers, callees, interfaces, data, migrations, operations, tests, and compatibility obligations. “Complete” means complete for that approved scope and impact cone, including preserved behavior and explicit non-goals; it does not mean documenting or rebuilding the entire repository.
 
 ## Primary outcome
 
@@ -39,9 +50,9 @@ Create a coordinated planning set under the canonical root `docs/implementation-
 The planning set must:
 
 - begin with a normalized product description;
-- cover the complete product, not only visible user flows;
+- cover the approved delivery scope and its impact cone, not only the visible happy path;
 - define production-grade, right-sized architecture;
-- give every major component its own plan;
+- give every in-scope component its own plan;
 - split each component into well-separated phases with stable IDs;
 - expose cross-component and cross-phase dependencies as an acyclic graph;
 - distinguish requirements, decisions, assumptions, deferred decisions, blockers, and risks;
@@ -66,6 +77,7 @@ The planning set must:
 14. **No vague placeholders.** “Use best practices,” “add security,” “handle errors,” or “scale later” are not implementation plans without concrete mechanisms, ownership, validation, and exit criteria.
 15. **Do not imply implementation has started.** Planning completion and implementation approval are separate events.
 16. **Ground external contracts in evidence.** Mocks, fixtures, generated clients, existing wrappers, and plan-authored schemas are not independent evidence of a provider's behavior. Research material external semantics or record an explicit gap before treating the adapter contract as ready.
+17. **Do not turn impact analysis into scope expansion.** Inspect adjacent behavior to discover dependencies and regressions, but redesign or implement it only when it is inside the approved scope or is a necessary prerequisite recorded with rationale.
 
 ## Workflow
 
@@ -89,7 +101,8 @@ Otherwise ask for a rough, free-form description covering at least:
 - intended users or customers;
 - main workflows and capabilities;
 - desired surfaces such as web, mobile, desktop, API, embedded, or internal tooling;
-- first-production-release scope;
+- requested delivery scope or first-production-release scope;
+- behavior that must remain unchanged and explicit non-goals for existing products;
 - known constraints, integrations, deadlines, or technology requirements.
 
 Do not require a formal PRD.
@@ -100,7 +113,7 @@ Do not require a formal PRD.
 2. Identify contradictions, duplicated requirements, undefined terms, and missing scope boundaries.
 3. Preserve original sources as evidence; do not silently change their meaning.
 4. Create or update `docs/implementation-plan/00-product-description.md` first.
-5. Record source documents, user answers, assumptions, deferred decisions, and change history.
+5. Record the delivery scope mode, requested outcome, impact cone, preserved behavior, non-goals, planned phases, authorized phases, applicable concern documents, and preservation sources in the one canonical delivery-scope block defined by `references/planning-output-contract.md`; record source documents, user answers, assumptions, deferred decisions, and change history in prose.
 
 #### 0.3 Ask principal-decision questions
 
@@ -130,11 +143,12 @@ Use `Blocked`, `Draft`, or `Ready for implementation`. A planning set may be rea
 ### Planning Phase 1 — Inspect repository and delivery context
 
 1. Inspect repository structure, manifests, lockfiles, schemas, interface definitions, deployment files, CI configuration, conventions, and architecture documents.
-2. For an existing product, separate current state, target state, and migration work.
-3. Record the evidence used.
-4. Reconcile repository evidence with `00-product-description.md`; surface contradictions.
-5. When the product materially depends on a third-party or separately operated system, read `references/external-system-evidence.md`. Research the behavior needed by the plan using authoritative documentation, machine-readable contracts, inspected legacy behavior, sanitized captures, or authorized safe observations.
-6. Record unsupported, contradictory, or inaccessible behavior as an evidence gap and gate the affected adapter work. Do not turn it into a confident mock or contract.
+2. For an existing product, inspect the repository broadly enough to identify the impact cone, then inspect affected and adjacent paths deeply enough to plan safely. Reuse valid existing architecture, conventions, and documentation rather than restating or replacing them.
+3. Separate current state, target state, migration work, preserved behavior, and deliberate non-goals.
+4. Record the evidence used.
+5. Reconcile repository evidence with `00-product-description.md`; surface contradictions.
+6. When the product materially depends on a third-party or separately operated system, read `references/external-system-evidence.md`. Research the behavior needed by the plan using authoritative documentation, machine-readable contracts, inspected legacy behavior, sanitized captures, or authorized safe observations.
+7. Record unsupported, contradictory, or inaccessible behavior as an evidence gap and gate the affected adapter work. Do not turn it into a confident mock or contract.
 
 ### Planning Phase 2 — Build the product model
 
@@ -149,6 +163,7 @@ Extract and organize:
 - data categories, ownership, retention, privacy, and compliance;
 - platform, deployment, team, budget, schedule, and technology constraints;
 - acceptance criteria;
+- preserved behavior and regression obligations for existing products;
 - contradictions, risks, and assumptions.
 
 Assign stable IDs such as `FR-001`, `NFR-001`, and `CON-001`.
@@ -165,7 +180,7 @@ Convert safely postponable choices into explicit decision gates instead of block
 
 Read `references/architecture-quality-bar.md`.
 
-Design all applicable concerns:
+Design all concerns applicable to the approved scope and impact cone. For bounded work, fit the change into the established architecture unless a documented incompatibility requires a scoped architecture change:
 
 - system context, actors, architectural style, and component boundaries;
 - dependency direction, data ownership, and business-invariant ownership;
@@ -185,15 +200,15 @@ Prefer a modular monolith unless requirements justify distributed services. Pref
 
 Use Mermaid diagrams where they materially improve clarity. Non-trivial products require at least system-context and component/deployment views.
 
-### Planning Phase 5 — Decompose into major components
+### Planning Phase 5 — Decompose the in-scope work into components
 
-Derive components from responsibility, data ownership, deployment, and team boundaries rather than a preset list. Assign each component a stable `CMP-###` ID and a dedicated file under `components/`.
+Derive components from responsibility, data ownership, deployment, and team boundaries rather than a preset list. For a full product, cover every major component. For bounded work, reuse the repository's established component boundaries where sound and include only affected components plus necessary shared foundations. Assign each in-scope component a stable `CMP-###` ID and a dedicated file under `components/`.
 
 For each component define purpose, responsibilities, non-responsibilities, internal architecture, public contracts, dependencies, state ownership, security, reliability, observability, test strategy, rollout, migration, rollback, risks, and decision gates.
 
 ### Planning Phase 6 — Design well-separated implementation phases
 
-Define a system-wide delivery model, then align every component to it. A common model is foundations, walking skeleton, core product, capability completion, hardening, and launch, but adapt it to the product.
+Define a delivery model appropriate to the scope, then align every in-scope component to it. A full product may use foundations, walking skeleton, core product, capability completion, hardening, and launch. A bounded change may instead use compatibility or characterization, implementation, migration, and rollout phases; do not force greenfield stages onto it.
 
 Assign every component phase a stable `PH-###-##` ID whose first numeric group matches its component ID. Each phase must include:
 
@@ -218,7 +233,7 @@ Phase rules:
 3. No phase starts while a prerequisite decision gate remains open.
 4. Security, integrity, migrations, tests, and observability belong in the phase that exposes the capability.
 5. Temporary scaffolding must be isolated from production and removed by the same phase exit gate.
-6. Each major component normally has at least two meaningful phases.
+6. Each component normally has at least two meaningful phases for full-product or multi-stage work. One atomic phase is allowed for a bounded change when the plan explains why further separation would not create a useful review or delivery boundary.
 7. Cross-component and cross-phase dependencies must form an acyclic graph.
 8. Identify potential file or artifact ownership conflicts; do not label overlapping work as parallel without an explicit extension point or serialization rule.
 9. A contract-bound dependency must name the interface, schema, symbol, event, file format, or behavioral contract that would be frozen. Prose such as “server ready” is insufficient.
@@ -236,16 +251,16 @@ Default root:
 docs/implementation-plan/
 ```
 
-Create `00-product-description.md` first. Use relative links, stable kebab-case filenames, one component plan per major component, stable IDs throughout, concise contract examples where needed, and no empty boilerplate documents.
+Create or update `00-product-description.md` first, including its unique canonical delivery-scope block. Use relative links, stable kebab-case filenames, one component plan per in-scope component, stable IDs throughout, concise contract examples where needed, and no empty boilerplate documents. For bounded work, reuse existing authoritative documents and create or update only the canonical planning files named applicable by the scope record.
 
 Mark the set `Draft`, `Blocked`, or `Ready for implementation`, and state exactly which phases are authorized.
 
-### Planning Phase 8 — Validate the complete planning set
+### Planning Phase 8 — Validate the scope-complete planning set
 
 Check that:
 
-1. every requirement maps to a component, phase, and validation method;
-2. every component has a dedicated phased plan;
+1. every in-scope requirement maps to a component, phase, and validation method;
+2. every in-scope component has a dedicated phased plan;
 3. data ownership, contracts, and dependency direction do not conflict;
 4. security, failure handling, observability, testing, deployment, migration, rollback, and operations are concrete;
 5. the dependency graph is acyclic;
@@ -254,9 +269,11 @@ Check that:
 8. every dependency has a type and every contract-bound edge names a concrete boundary candidate;
 9. expected write domains and likely shared-file conflicts are visible;
 10. candidate parallel waves contain no known implementation-bound edge between their members;
-11. every phase marked ready can begin without inventing major architecture;
+11. every phase marked ready can begin without inventing major architecture or absorbing work outside the approved impact cone;
 12. no material external adapter is marked ready solely because tests pass against a mock derived from the same assumptions;
-13. every unresolved provider behavior has a named owner and a gate before integration or real writes.
+13. every unresolved provider behavior has a named owner and a gate before integration or real writes;
+14. the canonical delivery-scope record agrees with the planning documents, contains every planned phase exactly once, and authorizes only a subset of those phases;
+15. every omitted concern document has a preservation source, and every single-phase bounded component explains its atomicity.
 
 When Python is available, run:
 
@@ -272,7 +289,7 @@ Read `references/implementation-handoff.md`.
 
 After all planning documents are written and validated, do **not** begin implementation automatically.
 
-- If at least one phase is authorized, ask one direct question: **“The implementation plan is complete. Should I proceed with implementation using the `parallel-plan-implementation` skill?”**
+- If at least one phase is authorized, ask one direct question: **“The implementation plan is complete for the approved scope. Should I proceed with implementation using the `parallel-plan-implementation` skill?”**
 - If no phase is authorized, state why implementation cannot safely start and ask whether the user wants the blocking decisions resolved.
 - If the user says no, stop after the planning report.
 - If the user says yes, activate the separately installed `parallel-plan-implementation` skill and pass the repository root, planning root, planning status, authorized phases, unresolved gates, validator result, candidate parallel waves, and current Git state.
@@ -302,8 +319,8 @@ Planning is complete only when:
 - source material and repository evidence were inspected;
 - principal decisions were answered, assumed, or gated;
 - requirements, components, and phases have stable IDs;
-- architecture, data, interfaces, security, deployment, and operations are documented;
-- every major component has a detailed phased plan;
+- architecture, data, interfaces, security, deployment, and operations affected by the approved scope are documented or linked to an authoritative preserved baseline;
+- every in-scope component has a detailed phased plan;
 - the phase dependency graph, boundary candidates, write domains, critical path, and parallelization constraints are documented;
 - testing, migration, rollback, observability, and production readiness are planned;
 - all documents are linked from the index;
@@ -320,6 +337,7 @@ Planning is complete only when:
 - defaulting to fashionable complexity;
 - postponing security, tests, observability, accessibility, or migration wholesale;
 - using phase numbers without stable IDs or explicit dependencies;
+- expanding a bounded feature, migration, or remediation into an unrequested whole-product redesign;
 - declaring phases parallel while they must modify the same files or undocumented internal APIs;
 - marking dependent phases ready while their decisions remain open;
 - treating a mock, generated client, or legacy wrapper as authoritative provider documentation;
@@ -332,3 +350,6 @@ Planning is complete only when:
 - “Read `product-spec.md` and plan the complete implementation.”
 - “Turn this PRD into architecture and phased plans for every component.”
 - “Inspect this repository and write a production-grade roadmap under `docs/`.”
+- “Plan this feature in the existing service without redesigning unaffected subsystems.”
+- “Plan an incremental migration from the legacy implementation, including coexistence, cutover, rollback, and preserved behavior.”
+- “Turn these reliability findings into an implementation-ready remediation plan for the affected components.”

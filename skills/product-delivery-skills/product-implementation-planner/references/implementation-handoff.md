@@ -10,7 +10,7 @@ Offer implementation only after:
 
 - all planning documents have been written;
 - the planning validator passes without errors;
-- planning status and authorized phases are explicit;
+- planning status and the canonical `planned_phase_ids` / `authorized_phase_ids` registries are explicit and validated;
 - stable component IDs, phase IDs, dependency edges, boundary candidates, and parallelization constraints exist;
 - blocking decisions are either resolved or exclude all phases being offered.
 
@@ -18,7 +18,7 @@ Offer implementation only after:
 
 When one or more phases are authorized, ask:
 
-> The implementation plan is complete. Should I proceed with implementation using the `parallel-plan-implementation` skill?
+> The implementation plan is complete for the approved scope. Should I proceed with implementation using the `parallel-plan-implementation` skill?
 
 The user must explicitly approve implementation. Do not soften this into automatic execution.
 
@@ -66,7 +66,7 @@ Implementation authorization does **not** authorize phase-commit review, finding
 
 After all approved implementation is integrated and the repository is clean, buildable, and passing, the implementation companion asks:
 
-> Implementation and integration are complete, and the project is buildable and passing. Should I run a parallel review of every phase commit?
+> Implementation and integration are complete for the approved scope, and the project is buildable and passing. Should I run a parallel review of every phase commit?
 
 Only an affirmative answer authorizes reviewer dispatch and local phase-history reconstruction. It does not authorize remote force-push, production deployment, or another irreversible action.
 

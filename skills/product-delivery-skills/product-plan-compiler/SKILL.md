@@ -1,8 +1,8 @@
 ---
 name: product-plan-compiler
-description: Use this skill after a detailed product or system plan exists—especially one produced by product-implementation-planner—to extract a traceable formal domain model, select a complementary verification portfolio across Alloy, SMT, TLA+/TLC/Apalache/TLAPS, Lean, Rocq, or Arend, run the native tools, challenge external-system abstractions, and refine the plan and formalization until they agree before implementation.
+description: Use this skill after a detailed product, feature, modernization, migration, remediation, or system plan exists—especially one produced by product-implementation-planner—to extract a traceable formal domain model for the approved scope, select a complementary verification portfolio across Alloy, SMT, TLA+/TLC/Apalache/TLAPS, Lean, Rocq, or Arend, run the native tools, challenge external-system abstractions, and refine the plan and formalization until they agree before implementation.
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   compatibility: "Requires a filesystem-enabled coding agent that can read and update planning documents and execute the native backends selected for checked claims. Missing tooling remains an explicit scoped gap; a fallback does not replace native verification. Intended upstream: `product-implementation-planner`; intended downstream: `parallel-plan-implementation`."
   upstream-skill: product-implementation-planner
   downstream-skill: parallel-plan-implementation
@@ -11,14 +11,14 @@ metadata:
 ---
 <!--
 COMPLETE SKILL DESCRIPTION
-This planning-verification skill compiles a detailed product plan into a traceable formal intermediate representation and an obligation-driven portfolio of executable prover or model-checker programs. It verifies the product domain—not merely the agents that authored the plan—by modeling entities, relations, lifecycles, operations, permissions, failures, concurrency, safety, liveness, and other plan rules.
+This planning-verification skill compiles a detailed product or change plan into a traceable formal intermediate representation and an obligation-driven portfolio of executable prover or model-checker programs. It verifies the approved domain and change—not merely the agents that authored the plan—by modeling relevant entities, relations, lifecycles, operations, permissions, failures, concurrency, safety, liveness, compatibility, and preserved behavior.
 It selects complementary backends by obligation, including Alloy, SMT, TLA+/TLC/Apalache/TLAPS, Lean, Rocq, and Arend; runs the native tools; preserves commands, versions, bounds, assumptions, and traces; and translates every counterexample or failed proof obligation back into the language and requirement IDs of the source plan. It treats formal environment abstractions and test doubles as claims that require real-system evidence, not as evidence merely because they agree with one another.
 The skill iteratively classifies defects in the plan, model, property, assumptions, bounds, or encoding, changes one layer at a time, and reruns affected checks plus regression, witness, non-vacuity, and mutation checks. Semantic plan changes require an explicit product decision and are never hidden inside a passing model.
 Its normal upstream is `product-implementation-planner`. It remains planning-only, writes verification artifacts under `docs/implementation-plan/formal-verification/`, and offers an explicit handoff to `parallel-plan-implementation` only after the plan, IR, formal programs, properties, assumptions, bounds, and native results converge for the documented scope.
 -->
 # Product Plan Compiler
 
-Use this skill after a detailed product or system plan exists—normally after `product-implementation-planner`. The artifact being compiled and checked is the **product plan itself**: its domain entities, relationships, lifecycles, operations, permissions, constraints, failures, and temporal behavior.
+Use this skill after a detailed product, change, or system plan exists—normally after `product-implementation-planner`. The artifact being compiled and checked is the **approved plan itself**: its in-scope domain entities, relationships, lifecycles, operations, permissions, constraints, failures, temporal behavior, and preservation obligations.
 
 Do not silently substitute verification of the planning agents or development workflow. Agent orchestration is in scope only when it is explicitly part of the product being designed.
 
@@ -39,7 +39,9 @@ parallel-plan-implementation
 phase-commit-reviewer
 ```
 
-Default input is the completed planning corpus under `docs/implementation-plan/`. Default compiler output is `docs/implementation-plan/formal-verification/`. When the source plan lives elsewhere, place the verification workspace adjacent to it and record the chosen paths.
+Default input is the scope-complete planning corpus under `docs/implementation-plan/`. Default compiler output is `docs/implementation-plan/formal-verification/`. When the source plan lives elsewhere, place the verification workspace adjacent to it and record the chosen paths.
+
+Read the planner's unique canonical delivery-scope block—including mode, outcome, impact cone, preserved behavior, non-goals, and planned phases—before choosing verification obligations; reject duplicate or contradictory scope declarations rather than selecting whichever is convenient. Full-product verification may cover the complete plan. For scoped change, modernization or migration, and remediation or reliability work, cover the changed rules, invariants that must remain true, compatibility and migration behavior, and affected interfaces or interactions. Unchanged product behavior outside the impact cone may be excluded with a recorded rationale and source baseline; discovering an unrelated concern does not silently expand the authorized scope.
 
 This skill may revise planning documents only through explicit, traceable product decisions. It must not modify product source code, dependencies, migrations, infrastructure, or runtime configuration. It never starts implementation automatically.
 
@@ -92,7 +94,7 @@ Before formalizing, confirm that the plan corpus is sufficiently complete for th
 
 - the source files and plan version are identifiable;
 - normative requirements have stable IDs or can be assigned without changing meaning;
-- the domain vocabulary, primary workflows, major components, data ownership, permissions, failures, and lifecycle rules are present;
+- the domain vocabulary, affected workflows and components, relevant data ownership, permissions, failures, lifecycle rules, compatibility, and preserved behavior are present;
 - blocking product decisions are resolved or the verification scope explicitly excludes them;
 - the plan states which implementation phases are intended to follow verification.
 
@@ -100,7 +102,7 @@ If the plan is materially incomplete, return it to `product-implementation-plann
 
 ### 1. Read and normalize the plan
 
-Read the complete plan before formalizing. Build a stable glossary and identify every normative claim, especially words such as `must`, `shall`, `may`, `only`, `exactly`, `never`, `eventually`, `immediately`, and `at most`.
+Read the complete in-scope plan and the baseline evidence needed to understand its impact cone before formalizing. Build a stable glossary and identify every normative claim in that scope, especially words such as `must`, `shall`, `may`, `only`, `exactly`, `never`, `eventually`, `immediately`, and `at most`.
 
 Normalize the plan without changing its meaning:
 
@@ -261,7 +263,7 @@ When new provider evidence changes an assumption, update the external-system dos
 
 The verification cycle is complete only when:
 
-- every normative plan claim is mapped, intentionally excluded, or marked non-formalizable;
+- every normative plan claim within the documented verification scope is mapped, intentionally excluded, or marked non-formalizable;
 - the model parses/type-checks in the selected native system;
 - a valid initial state and key witness scenarios exist;
 - all required checks pass for documented bounds/assumptions, or accepted exceptions are recorded;
@@ -280,7 +282,7 @@ Record one scoped status in `verification-report.md`: `Blocked`, `In refinement`
 
 After the convergence gate passes, do not begin implementation automatically. Report the verified scope, unchecked or accepted residual risks, native tool evidence, and the exact plan revision that is aligned with the formal models. Then ask one direct handoff question:
 
-**“The product plan and formal models are aligned for the documented scope. Should I proceed with implementation using the `parallel-plan-implementation` skill?”**
+**“The approved plan and formal models are aligned for the documented scope. Should I proceed with implementation using the `parallel-plan-implementation` skill?”**
 
 If convergence is blocked or unresolved, do not offer unrestricted implementation. State which phases, if any, remain safe and which decisions or obligations block the rest.
 

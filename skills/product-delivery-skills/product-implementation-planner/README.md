@@ -1,6 +1,6 @@
 # Product Implementation Planner
 
-An Agent Skill that turns a rough product idea, PRD, requirements document, or existing repository into a complete production-grade architecture and phased implementation plan under `docs/implementation-plan/`.
+An Agent Skill that turns a product idea or a change to an existing repository into a production-grade architecture and phased implementation plan complete for the approved scope under `docs/implementation-plan/`. It supports full products, scoped features, modernization or migration, and remediation or reliability work.
 
 ## Embedded complete-description comment
 
@@ -8,10 +8,10 @@ The source `SKILL.md` begins with a `COMPLETE SKILL DESCRIPTION` HTML comment th
 
 ## Workflow
 
-1. Obtain or normalize the product description.
+1. Obtain or normalize the product or change description and record one canonical typed delivery-scope block.
 2. Ask a tailored set of principal architecture questions, including hosting/operating model when unresolved.
 3. Classify unknowns as blocking, decision-gated, or non-blocking.
-4. Produce coordinated product, architecture, data, interface, security, operations, testing, delivery, and component plans.
+4. Establish the impact cone and produce or update the applicable product, architecture, data, interface, security, operations, testing, delivery, and component plans.
 5. Assign stable requirement, decision, component, phase, and boundary identifiers.
 6. Validate dependency types, write domains, shared-state constraints, and candidate parallel waves.
 7. Ask whether implementation should proceed with `parallel-plan-implementation`.
@@ -39,4 +39,4 @@ The host controls model availability. Requested and actual profiles are recorded
 python3 <skill-root>/scripts/validate_plan.py <repository-root>
 ```
 
-The validator checks required documents and sections, stable identifiers, component phases, dependency classifications, traceability, decision gates, boundary candidates, write domains, and preliminary parallel waves.
+The validator checks scope-appropriate documents and sections, stable identifiers, component phases, dependency classifications, traceability, decision gates, boundary candidates, write domains, and preliminary parallel waves.

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use this reference during Planning Phase 0. The goal is to turn either a rough idea or an existing specification into a normalized product-description document that can safely drive architecture and implementation planning.
+Use this reference during Planning Phase 0. The goal is to turn a rough product idea, change request, or existing specification into a normalized product-or-change description that can safely drive architecture and implementation planning.
 
 The intake must improve clarity without forcing the user to know every technical answer upfront.
 
@@ -24,7 +24,7 @@ When the invocation contains no substantive description and names no unambiguous
 
 Use a prompt similar to:
 
-> Describe the product you want to build in any format. A rough idea is enough. Please include the problem it solves, intended users, main workflows or capabilities, desired product surfaces, what belongs in the first production release, and any known constraints or integrations.
+> Describe the product or change you want to deliver in any format. A rough idea is enough. Please include the desired outcome, affected users and workflows, what is in and out of scope, behavior that must remain unchanged for an existing product, and any known constraints or integrations.
 
 Do not ask the user to fill a long questionnaire before they can begin. Obtain the free-form description first, then ask targeted questions based on it.
 
@@ -36,7 +36,8 @@ A description is usable for the next planning step when it gives enough informat
 - intended users, customers, operators, or external actors;
 - the primary value-producing workflows;
 - the intended product surfaces;
-- a plausible first-production-release boundary;
+- the delivery scope mode and a plausible release or change boundary;
+- current and target behavior, the impact cone, and preserved behavior for existing products;
 - known business rules, data, integrations, or constraints;
 - which major facts are confirmed versus uncertain.
 
@@ -48,6 +49,7 @@ After reading the initial description, perform one focused pass over the decisio
 
 | Decision area | Examples of choices | Why it can be principal |
 |---|---|---|
+| Delivery scope | Full product; scoped change; modernization or migration; remediation or reliability | Determines what completeness means, which baseline evidence is required, and which artifacts and components are in scope |
 | Hosting and operating model | Product-owner-managed service; dedicated managed deployment; customer-managed or on-premises; hybrid; local-only | Changes topology, trust boundaries, upgrade delivery, observability, support, storage, data residency, and vendor choices |
 | Product surfaces | Responsive web; native mobile; desktop; public interface; embedded; internal tools | Changes client architecture, release channels, compatibility, offline behavior, and testing |
 | Tenancy | Single organization; multi-tenant shared; isolated tenant resources; dedicated deployment | Changes identity, data partitioning, authorization, provisioning, cost, and operations |
@@ -85,7 +87,7 @@ For each deferred decision, record:
 - **Owner:** decision-maker when known;
 - **Revision path:** documents and work that must change if the final choice differs from the provisional default.
 
-Do not use deferral to avoid decisions that are required for safety, legal compliance, first-release semantics, or the next executable phase.
+Do not use deferral to avoid decisions that are required for safety, legal compliance, approved-scope semantics, or the next executable phase.
 
 ## Status rules
 
@@ -100,8 +102,9 @@ The overall plan may contain later decision gates while early phases are ready. 
 `00-product-description.md` should capture:
 
 - source documents and user answers;
+- the unique canonical delivery-scope record defined by `planning-output-contract.md`, plus current and target behavior and supporting prose;
 - product vision, problem, users, and intended outcomes;
-- first-production-release scope and explicit non-goals;
+- delivery scope and release boundary;
 - product surfaces and hosting or operating model;
 - primary, exceptional, and recovery workflows;
 - functional and non-functional requirements with stable IDs;
@@ -111,4 +114,4 @@ The overall plan may contain later decision gates while early phases are ready. 
 - assumptions and deferred decisions;
 - acceptance model and change history.
 
-This document is the product contract for the rest of the planning set. Later plans must link back to it rather than silently redefining the product.
+This document is the product or change contract for the rest of the planning set. Later plans must link back to it rather than silently redefining the approved scope.

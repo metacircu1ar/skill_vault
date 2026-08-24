@@ -41,10 +41,12 @@ Do not mechanically ask all of them. Ask only what is relevant and unresolved.
 
 ## Product and scope
 
-- What problem is the product solving, and what outcome defines success?
-- Which capabilities are required for the first production release?
+- What problem is the product or change solving, and what outcome defines success?
+- Is this full-product, scoped-change, modernization-or-migration, or remediation-or-reliability work?
+- Which capabilities are required for the approved delivery scope or first production release?
 - Which tempting adjacent capabilities are explicitly out of scope?
 - Is this a new product, a replacement, or an extension of an existing system?
+- For an existing system, which callers, interfaces, data, operations, tests, and compatibility guarantees form the impact cone, and what behavior must remain unchanged?
 - Are there fixed launch, contractual, or migration deadlines?
 
 ## Hosting and operating model

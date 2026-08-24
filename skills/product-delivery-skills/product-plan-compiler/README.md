@@ -2,7 +2,7 @@
 
 A companion Agent Skill that runs after `product-implementation-planner` and before `parallel-plan-implementation`.
 
-It treats a detailed product or system plan as source code for a higher-level compiler: the skill extracts a formal domain model, projects that model into relevant prover/model-checker systems, executes the native tools, translates diagnostics back into product language, and iterates on the plan and model until they are traceably aligned.
+It treats a detailed product, feature, modernization, migration, remediation, or system plan as source code for a higher-level compiler: the skill extracts a formal domain model for the approved scope, projects that model into relevant prover/model-checker systems, executes the native tools, translates diagnostics back into product language, and iterates on the plan and model until they are traceably aligned.
 
 The object being checked is the **product design itself**: entities, relationships, state transitions, business rules, permissions, failure behavior, concurrency, deletion and retention rules, quantitative constraints, and temporal requirements. It is not merely the protocol used by the agents that authored the plan.
 
@@ -11,7 +11,7 @@ The object being checked is the **product design itself**: entities, relationshi
 ```text
 product-implementation-planner
               |
-              | detailed, complete implementation plan
+              | implementation plan complete for its approved scope
               v
      product-plan-compiler
               |
@@ -162,7 +162,7 @@ Lean or Rocq  -> strongest critical invariants and refinement theorems
 
 ### Phase A — Baseline and extract
 
-1. Read the complete planning set.
+1. Read the complete in-scope planning set and the baseline evidence needed to understand its impact cone.
 2. Record source files, versions, scope, exclusions, and existing decision gates.
 3. Assign stable IDs to normative claims.
 4. Build a glossary.
