@@ -21,6 +21,7 @@ Return `MODEL_BLOCKER` without reviewing when the requested profile is unavailab
 - **Frozen final review baseline:** `<review-baseline-commit>`
 - **Detached target-commit review worktree or immutable target snapshot:** `<absolute-path>`
 - **Findings output:** `docs/implementation-plan/parallel-implementation/parallel-review/findings/<phase-id-lowercase>.json`
+- **External fidelity required:** `<true|false>`
 
 You are one fresh, independent, read-only reviewer for exactly this phase commit. Verify that the supplied checkout is pinned to `<target-commit>`; use Git object reads to compare with the frozen final baseline. Do not edit, format, generate, commit, merge, rebase, amend, create branches, post external comments, or mutate production systems.
 
@@ -45,6 +46,13 @@ Read completely where relevant:
 8. `<repository instruction files governing changed paths>`
 9. `<phase-to-commit map path>`
 10. `<later-phase summaries and relevant later commit IDs>`
+
+## External fidelity context
+
+Do not infer or override `external_fidelity_required`.
+
+- When `true`: read `<external-system dossier and evidence paths>`, `<known gaps>`, `<test-double provenance and omissions>`, `<provider version and environment>`, and `<characterization or conformance results>`.
+- When `false`: this context is not applicable; do not request raw provider material merely because the product has another external integration.
 
 ## Intended phase outcome
 

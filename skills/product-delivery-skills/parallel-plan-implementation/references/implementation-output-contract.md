@@ -217,6 +217,7 @@ Conform to `assets/review-manifest.schema.json`. Record:
 - review execution mode, host concurrency limit, batch membership, distinct reviewer instances, and start/completion timestamps;
 - exact phase order and one review record per phase;
 - original parent/commit and current rewritten commit;
+- explicit `external_fidelity_required` classification for every phase;
 - plan, boundary, contract, prompt, and findings paths;
 - one main-agent disposition per finding;
 - finding counts, regression-test count, validation results, final code checkpoint, and metadata commit.
@@ -227,7 +228,7 @@ Each fresh reviewer returns one file conforming to `assets/review-findings.schem
 
 ### `parallel-review/reviewer-prompts/<phase>.md`
 
-Create one complete prompt from `assets/reviewer-prompt-template.md` per phase. It must include the exact target and parent, frozen final baseline, `phase-commit-reviewer` skill requirement, full relevant context paths, contracts, phase map, validation commands, requested/actual profile, strict read-only policy, and output path.
+Create one complete prompt from `assets/reviewer-prompt-template.md` per phase. It must include the exact target and parent, frozen final baseline, `phase-commit-reviewer` skill requirement, the same `external_fidelity_required` value as the manifest, full relevant context paths, contracts, phase map, validation commands, requested/actual profile, strict read-only policy, and output path.
 
 ### `parallel-review/commit-map.md`
 

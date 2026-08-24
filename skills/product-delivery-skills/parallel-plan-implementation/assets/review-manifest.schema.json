@@ -301,6 +301,7 @@
         "boundary_path",
         "boundary_section",
         "contract_ids",
+        "external_fidelity_required",
         "prompt_path",
         "findings_path",
         "reviewer_instance_id",
@@ -359,6 +360,9 @@
             "pattern": "^CTR-[0-9]{3,}$"
           },
           "uniqueItems": true
+        },
+        "external_fidelity_required": {
+          "type": "boolean"
         },
         "prompt_path": {
           "type": "string",

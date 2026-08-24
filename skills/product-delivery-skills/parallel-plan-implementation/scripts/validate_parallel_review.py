@@ -460,7 +460,8 @@ def main() -> int:
         required_phase = (
             "phase_id", "component_id", "original_commit", "original_parent",
             "current_commit", "review_baseline_commit", "plan_path", "plan_section",
-            "boundary_path", "boundary_section", "contract_ids", "prompt_path",
+            "boundary_path", "boundary_section", "contract_ids",
+            "external_fidelity_required", "prompt_path",
             "findings_path", "reviewer_instance_id", "review_batch_id",
             "started_at", "completed_at", "status", "limitations",
         )
@@ -474,6 +475,9 @@ def main() -> int:
             errors.append(f"duplicate phase review: {phase_id}")
             continue
         review_by_phase[phase_id] = review
+        external_fidelity_required = review.get("external_fidelity_required")
+        if not isinstance(external_fidelity_required, bool):
+            errors.append(f"{label}.external_fidelity_required must be boolean")
         if review.get("status") not in PHASE_STATUSES:
             errors.append(f"{label}.status is invalid")
         reviewer_instance = review.get("reviewer_instance_id")
@@ -550,6 +554,15 @@ def main() -> int:
                 for expected in prompt_expectations:
                     if expected not in text:
                         errors.append(f"{label}.prompt_path missing {expected!r}")
+                if isinstance(external_fidelity_required, bool):
+                    expected_flag = (
+                        "**External fidelity required:** `"
+                        f"{'true' if external_fidelity_required else 'false'}`"
+                    )
+                    if expected_flag not in text:
+                        errors.append(
+                            f"{label}.prompt_path missing {expected_flag!r}"
+                        )
                 for contract_id in review.get("contract_ids", []):
                     if contract_id not in text:
                         errors.append(f"{label}.prompt_path missing contract ID {contract_id}")
