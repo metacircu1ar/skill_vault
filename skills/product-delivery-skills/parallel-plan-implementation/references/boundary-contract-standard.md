@@ -77,7 +77,8 @@ Applicable contract kinds include:
 - configuration, environment variable, feature-flag, or secret contract;
 - user-interface component contract;
 - observability, audit, health, or operational command contract;
-- deterministic mock, fake, fixture, generated client, or contract-test suite.
+- product-owned normalized-port fake, fixture, generated client, or contract-test suite;
+- evidence-backed provider-protocol emulator, when the phase must simulate an uncontrolled external system.
 
 ## Required phase-boundary section
 
@@ -200,18 +201,18 @@ A phase is not complete until its outbound obligations and contract tests pass.
 
 ## Test doubles and provider absence
 
-A consumer may start before its provider only when a deterministic substitute exists.
+A consumer may start before its provider only when the product-owned normalized port is frozen and a deterministic internal-port substitute exists. This proves consumer conformance to the normalized port, not provider behavior or real-adapter fidelity.
 
 The boundary must identify:
 
-- the mock, fake, stub, emulator, fixture, or generated client path;
+- whether the substitute is an internal-port fake or a provider-protocol emulator, and its path;
 - how it is generated or started;
 - which contract version it implements;
 - how contract tests prevent drift;
 - behavior intentionally not simulated;
 - conditions requiring later integration tests against the real provider.
 
-Do not permit worker-authored ad hoc stubs that redefine the provider contract.
+For a provider-protocol emulator, also record the evidence provenance, represented provider version/environment, and known differences from declared or observed provider behavior. Do not permit worker-authored ad hoc stubs that redefine the provider contract or treat a provider emulator as independent provider evidence.
 
 ## Path ownership
 
