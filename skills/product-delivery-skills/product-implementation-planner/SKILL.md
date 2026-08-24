@@ -1,9 +1,9 @@
 ---
 name: product-implementation-planner
-description: Use this skill to create or normalize a product description and turn it, plus repository evidence, into a complete production-grade architecture and phased implementation plan under docs/implementation-plan/. Use for rough product ideas, PRDs, requirements, feature specifications, existing repositories, or start-to-finish delivery roadmaps. It asks for a missing description, clarifies principal decisions, records safe deferrals, assigns stable component and phase IDs, and prepares dependency-aware plans for an optional handoff to the parallel-plan-implementation skill. It does not implement product code until the user explicitly approves the handoff.
-compatibility: "Requires a filesystem-enabled coding agent that can inspect a repository and write Markdown under docs/. Optional implementation requires `parallel-plan-implementation`; optional review requires `phase-commit-reviewer`. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; host support and explicit substitution approval are required. Python 3 is optional for validation."
+description: Use this skill to create or normalize a product description and turn it, plus repository and relevant external-system evidence, into a complete production-grade architecture and phased implementation plan under docs/implementation-plan/. Use for rough product ideas, PRDs, requirements, feature specifications, existing repositories, migrations, or start-to-finish delivery roadmaps. It asks for a missing description, clarifies principal decisions, records safe deferrals, assigns stable component and phase IDs, and prepares dependency-aware plans for an optional handoff to the parallel-plan-implementation skill. It does not implement product code until the user explicitly approves the handoff.
 metadata:
-  version: "2.1.1"
+  version: "2.2.0"
+  compatibility: "Requires a filesystem-enabled coding agent that can inspect a repository and write Markdown under docs/. Optional implementation requires `parallel-plan-implementation`; optional review requires `phase-commit-reviewer`. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; host support and explicit substitution approval are required. Python 3 is optional for validation."
   companion-skill: parallel-plan-implementation
   reviewer-skill: phase-commit-reviewer
 ---
@@ -65,6 +65,7 @@ The planning set must:
 13. **Never hide uncertainty.** Label inferred details as assumptions and unresolved details as open or deferred.
 14. **No vague placeholders.** “Use best practices,” “add security,” “handle errors,” or “scale later” are not implementation plans without concrete mechanisms, ownership, validation, and exit criteria.
 15. **Do not imply implementation has started.** Planning completion and implementation approval are separate events.
+16. **Ground external contracts in evidence.** Mocks, fixtures, generated clients, existing wrappers, and plan-authored schemas are not independent evidence of a provider's behavior. Research material external semantics or record an explicit gap before treating the adapter contract as ready.
 
 ## Workflow
 
@@ -132,6 +133,8 @@ Use `Blocked`, `Draft`, or `Ready for implementation`. A planning set may be rea
 2. For an existing product, separate current state, target state, and migration work.
 3. Record the evidence used.
 4. Reconcile repository evidence with `00-product-description.md`; surface contradictions.
+5. When the product materially depends on a third-party or separately operated system, read `references/external-system-evidence.md`. Research the behavior needed by the plan using authoritative documentation, machine-readable contracts, inspected legacy behavior, sanitized captures, or authorized safe observations.
+6. Record unsupported, contradictory, or inaccessible behavior as an evidence gap and gate the affected adapter work. Do not turn it into a confident mock or contract.
 
 ### Planning Phase 2 — Build the product model
 
@@ -142,7 +145,7 @@ Extract and organize:
 - primary and exceptional journeys;
 - functional and non-functional requirements;
 - business rules and invariants;
-- integrations and systems of record;
+- integrations and systems of record, including evidence-backed behavior, unknowns, and provider-version assumptions;
 - data categories, ownership, retention, privacy, and compliance;
 - platform, deployment, team, budget, schedule, and technology constraints;
 - acceptance criteria;
@@ -170,7 +173,7 @@ Design all applicable concerns:
 - identity, authentication, authorization, and trust boundaries;
 - persistence, indexing, search, caching, files, and data lifecycle;
 - concurrency, transactions, idempotency, retries, timeouts, and recovery;
-- integrations and degraded-mode behavior;
+- integrations, degraded-mode behavior, external-contract evidence, drift risks, and adapter/test-double conformance gates;
 - client state, navigation, accessibility, offline behavior, and error states;
 - hosting, environments, secrets, configuration, and infrastructure ownership;
 - observability, audit, support tooling, incidents, backup, restore, and disaster recovery;
@@ -204,6 +207,7 @@ Assign every component phase a stable `PH-###-##` ID whose first numeric group m
 - a preliminary parallelization classification and rationale;
 - likely repository write domains and shared areas;
 - validation, tests, operations, migration, and rollback work;
+- external evidence prerequisites and real-adapter characterization or conformance work where applicable;
 - risks and deliberately deferred work;
 - parallelization constraints, including any reason it must be serialized.
 
@@ -250,7 +254,9 @@ Check that:
 8. every dependency has a type and every contract-bound edge names a concrete boundary candidate;
 9. expected write domains and likely shared-file conflicts are visible;
 10. candidate parallel waves contain no known implementation-bound edge between their members;
-11. every phase marked ready can begin without inventing major architecture.
+11. every phase marked ready can begin without inventing major architecture;
+12. no material external adapter is marked ready solely because tests pass against a mock derived from the same assumptions;
+13. every unresolved provider behavior has a named owner and a gate before integration or real writes.
 
 When Python is available, run:
 
@@ -316,6 +322,8 @@ Planning is complete only when:
 - using phase numbers without stable IDs or explicit dependencies;
 - declaring phases parallel while they must modify the same files or undocumented internal APIs;
 - marking dependent phases ready while their decisions remain open;
+- treating a mock, generated client, or legacy wrapper as authoritative provider documentation;
+- recording new provider evidence only in a ledger instead of updating the current external-system dossier and invalidating dependent plans;
 - beginning implementation before asking the user.
 
 ## Example activations

@@ -11,6 +11,9 @@ docs/implementation-plan/
 ├── 01-system-architecture.md
 ├── 02-domain-and-data.md
 ├── 03-interfaces-and-integrations.md
+├── 04-external-system-evidence.md
+├── external-systems/
+│   └── <material-external-system>.md
 ├── components/
 │   ├── <major-component-a>.md
 │   ├── <major-component-b>.md
@@ -35,7 +38,10 @@ Use stable identifiers consistently:
 - deferred decision: `DEC-001`;
 - component: `CMP-001`, `CMP-002`, or another stable numeric ID;
 - component phase: `PH-001-00`, `PH-002-02`, or another component-qualified stable ID whose first numeric group matches the component;
-- dependency edge, when named explicitly: `DEP-001`.
+- dependency edge, when named explicitly: `DEP-001`;
+- material external system: `EXT-001`;
+- external behavior claim: `ECL-EXT-001-001`;
+- external evidence item: `EVD-EXT-001-001`.
 
 Never reuse an ID for a different meaning. Renaming a heading must not change its ID. Component-phase IDs are the canonical implementation-unit candidates used by the companion implementation skill.
 

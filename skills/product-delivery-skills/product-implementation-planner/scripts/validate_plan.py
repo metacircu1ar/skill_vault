@@ -246,7 +246,7 @@ def validate_required_file(path: Path, errors: list[str], warnings: list[str]) -
         if missing:
             errors.append(f"{path}: missing dependency classifications: {', '.join(missing)}")
 
-    if path.name != "99-open-questions.md":
+    if path.name not in {"04-external-system-evidence.md", "99-open-questions.md"}:
         for pattern in UNRESOLVED_PATTERNS:
             if pattern.search(text):
                 warnings.append(f"{path}: contains unresolved marker matching /{pattern.pattern}/")
