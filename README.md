@@ -8,9 +8,21 @@ A personal collection of agent skills, workflow references, multi-agent coordina
 
 ## Contents
 
-### Workflow references
+### Top-level workflow skills and references
 
-The Markdown files in [`skills/`](skills/) document reusable workflows for advising, batch changes, code review, deep research, goal-driven execution, verifier generation, localization, simplification, and testable frontends.
+The standalone Markdown files directly under [`skills/`](skills/) capture reusable agent workflows and extracted runtime behavior:
+
+| Skill or reference | Purpose |
+| --- | --- |
+| [`advisor`](skills/advisor-skill.md) | Configure a smaller Claude model to consult a stronger advisor model at difficult decision points. |
+| [`batch`](skills/batch-skill.md) | Plan and execute wide, independently mergeable changes through parallel worktree agents and separate pull requests. |
+| [`code-review`](skills/code-review-skill.md) | Run a multi-angle diff review with independent finding verification and optional fixes or pull-request comments. |
+| [`deep-research`](skills/deep-research-skill.md) | Produce a cited report through parallel searches, source extraction, and adversarial claim verification. |
+| [`goal`](skills/goal-skill.md) | Keep an agent working until an evidence-backed completion condition is judged to be satisfied. |
+| [`init-verifiers`](skills/init-verifiers-skill.md) | Generate project-specific functional verifier skills for browser, CLI, and HTTP behavior. |
+| [`professional-localization`](skills/professional-localization-skill.md) | Design localization as an end-to-end product boundary spanning UI, server, storage, contracts, and CI. |
+| [`simplify`](skills/simplify-skill.md) | Review a diff for reuse, simplicity, efficiency, and abstraction-level improvements, then apply the cleanup. |
+| [`testable-frontend`](skills/testable-frontend-skill.md) | Structure frontend code and test tiers so deterministic automated testing is practical by construction. |
 
 ### Agent coordination skills
 
@@ -26,6 +38,12 @@ Invoke the same skill on both agents with the appropriate role:
 /code-review-loop implementor
 /code-review-loop reviewer
 ```
+
+### Git history skills
+
+| Skill | Purpose |
+| --- | --- |
+| [`verified-commit-split`](skills/verified-commit-split/SKILL.md) | Split uncommitted work, one commit, or a contiguous commit range into logical commits while proving final tree identity against a protected backup. |
 
 ### Product delivery skills
 
@@ -65,7 +83,9 @@ Each product-delivery skill includes its supporting references, templates, schem
 Clone the repository and copy the skill or reference you need into the directory expected by your agent runtime:
 
 ```text
+skills/<standalone-workflow>-skill.md
 skills/code-review-loop/SKILL.md
+skills/verified-commit-split/SKILL.md
 skills/product-delivery-skills/<skill-name>/SKILL.md
 skills/audit/<skill-name>/SKILL.md
 ```
@@ -73,9 +93,10 @@ skills/audit/<skill-name>/SKILL.md
 ## Repository layout
 
 ```text
-skills/                          Workflow references and skill material
+skills/*-skill.md               Standalone workflow skills and references
 skills/code-review-loop/         Two-agent implementation/review coordination skill
 skills/code-review-loop/verification/  TLA+ model, checks, and reproducibility notes
+skills/verified-commit-split/    Content-preserving Git commit-splitting skill
 skills/audit/                    Focused audit skills
 skills/product-delivery-skills/  Self-contained product-delivery skills
 LICENSE                          MIT license
