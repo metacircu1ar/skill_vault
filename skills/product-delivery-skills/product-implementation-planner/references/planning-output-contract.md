@@ -21,6 +21,7 @@ For `Full product`, create this structure and mark all five concern documents ap
 ```text
 docs/implementation-plan/
 ├── README.md
+├── delivery-status.md
 ├── 00-product-description.md
 ├── 01-system-architecture.md
 ├── 02-domain-and-data.md
@@ -41,7 +42,7 @@ docs/implementation-plan/
 
 All documents must use relative links and agree on names, IDs, boundaries, contracts, data ownership, and phase dependencies.
 
-For a bounded mode, keep the same planning root but update or create only the artifacts needed by the approved scope and impact cone. `README.md`, `00-product-description.md`, `92-delivery-roadmap.md`, `93-implementation-units.md`, `99-open-questions.md`, and a component plan for every affected component are required. Create or update `01`, `02`, `03`, `90`, and `91` only when the change affects those concerns. Reuse authoritative existing architecture or operational documents by relative link when they remain valid, and identify them in the index; do not create placeholder documents or copy unaffected product design merely to resemble a full-product package. External-system evidence remains conditional on a material external dependency.
+For a bounded mode, keep the same planning root but update or create only the artifacts needed by the approved scope and impact cone. `README.md`, `delivery-status.md`, `00-product-description.md`, `92-delivery-roadmap.md`, `93-implementation-units.md`, `99-open-questions.md`, and a component plan for every affected component are required. Create or update `01`, `02`, `03`, `90`, and `91` only when the change affects those concerns. Reuse authoritative existing architecture or operational documents by relative link when they remain valid, and identify them in the index; do not create placeholder documents or copy unaffected product design merely to resemble a full-product package. External-system evidence remains conditional on a material external dependency.
 
 ## Stable identifiers
 
@@ -64,7 +65,7 @@ Never reuse an ID for a different meaning. Renaming a heading must not change it
 
 ## Global document metadata
 
-At the top of every document include:
+At the top of every canonical planning document include:
 
 - title;
 - status: `Draft`, `Blocked`, or `Ready for implementation`;
@@ -73,6 +74,8 @@ At the top of every document include:
 - related documents.
 
 For component documents also include the component ID. For phase sections include the phase ID in the heading.
+
+`delivery-status.md` uses its own derived-summary metadata contract below because its stage status continues beyond planning and is not a canonical planning status.
 
 Use these labels consistently:
 
@@ -104,7 +107,56 @@ Required sections:
 13. Implementation handoff readiness
 14. How to use and maintain the plan
 
-The readiness statement must explain why the set is `Draft`, `Blocked`, or `Ready for implementation` and identify exactly which `PH-###-##` IDs are authorized.
+Use exactly one level-2 `## Planning status and phase-readiness statement` heading. Its section must contain exactly one parseable status field:
+
+```markdown
+- **Planning status:** Draft
+```
+
+Set it to `Draft`, `Blocked`, or `Ready for implementation`, explain why, and identify exactly which `PH-###-##` IDs are authorized. The human delivery-status Planning row must agree: `Draft` maps to `In progress`, `Blocked` maps to `Blocked`, and `Ready for implementation` maps to `Completed`.
+
+## `delivery-status.md` — human operator summary
+
+This is the one concise, cross-stage document for a human observing delivery. It is a derived navigation and status view, not a source of product scope, proof, implementation authority, or review truth. The canonical planning documents, formal-verification artifacts, manifests, ledgers, Git commits, validation results, and reviewer reports remain authoritative. When the summary disagrees with detailed evidence, correct the summary; never change evidence merely to make the summary look consistent.
+
+At the top include these fields. `Summary type` must be exactly `Derived human-readable delivery status`, and `Authority` must begin with `Non-authoritative`:
+
+```markdown
+- **Summary type:** Derived human-readable delivery status
+- **Authority:** Non-authoritative; follow the linked canonical evidence
+- **Current stage:** Planning
+- **Current status:** In progress
+- **Last updated:** YYYY-MM-DD
+- **Operator action required:** None
+- **Related documents:** [Planning index](README.md)
+```
+
+Set **Current stage** to `Planning`, `Formal verification`, `Implementation`, `Review`, or `Delivery complete`. Set **Current status** to one of the explicit stage states below; when the current stage has a table row, the two statuses must match. Replace the example status, action, date, and links with current values. **Last updated** must be a valid ISO-8601 calendar date in `YYYY-MM-DD` form.
+
+Required sections:
+
+1. Scope at a glance
+2. Stage status
+3. What changed
+4. Decisions and operator actions
+5. Verification, implementation, and review summary
+6. Risks and blockers
+7. Evidence links
+
+Use exactly one level-2 `## Stage status` heading. Under it, keep exactly one current row for each top-level stage, with non-empty outcome and detailed-evidence cells:
+
+```markdown
+| Stage | Status | Outcome | Detailed evidence |
+|---|---|---|---|
+| Planning | <status> | <one-sentence outcome> | <links> |
+| Formal verification | <status> | <one-sentence outcome> | <links> |
+| Implementation | <status> | <one-sentence outcome> | <links> |
+| Review | <status> | <one-sentence outcome> | <links> |
+```
+
+Use explicit states such as `Not started`, `Not requested`, `In progress`, `Blocked`, `Completed`, `Completed with limitations`, `Declined`, or `Skipped`; do not use vague percentages or “mostly done.” Summarize only material changes since the previous stage update. Name any decision the operator must make, and write `None` when no action is required. Link to stable IDs and detailed evidence instead of copying requirements, manifests, logs, prompts, traces, or finding reports. Keep the document to roughly one human-readable page; the validator warns when it exceeds 1,500 words.
+
+The main orchestrator for the active top-level stage owns this file. Implementor and reviewer subagents treat it as read-only. Update it when planning completes or blocks, formal verification converges or blocks, implementation reaches green or blocks, and review completes, is declined, or blocks. After every such update, explicitly tell the operator that the human status summary was updated, give the path, state the current stage/status, and say whether operator action is required.
 
 ## `00-product-description.md`
 

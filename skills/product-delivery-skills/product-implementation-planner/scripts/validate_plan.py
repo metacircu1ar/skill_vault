@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the scope-relative structural completeness of docs/implementation-plan.
+"""Validate the scope-relative structural completeness of a selected planning root.
 
 The validator checks document structure, stable IDs, phase metadata, and implementation
 handoff coverage. It cannot prove architectural correctness or safe parallelism; the agent
@@ -13,6 +13,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -21,6 +22,7 @@ PLAN_RELATIVE_PATH = Path("docs") / "implementation-plan"
 CORE_REQUIRED_FILES = (
     "00-product-description.md",
     "README.md",
+    "delivery-status.md",
     "92-delivery-roadmap.md",
     "93-implementation-units.md",
     "99-open-questions.md",
@@ -64,6 +66,58 @@ README_HEADINGS = (
     "implementation handoff readiness",
     "how to use and maintain the plan",
 )
+
+DELIVERY_STATUS_HEADINGS = (
+    "scope at a glance",
+    "stage status",
+    "what changed",
+    "decisions and operator actions",
+    "verification, implementation, and review summary",
+    "risks and blockers",
+    "evidence links",
+)
+
+DELIVERY_STATUS_METADATA_FIELDS = (
+    "Summary type",
+    "Authority",
+    "Current stage",
+    "Current status",
+    "Last updated",
+    "Operator action required",
+    "Related documents",
+)
+
+DELIVERY_STATUS_STAGES = (
+    "Planning",
+    "Formal verification",
+    "Implementation",
+    "Review",
+)
+
+DELIVERY_STATUS_CURRENT_STAGES = {
+    "planning",
+    "formal verification",
+    "implementation",
+    "review",
+    "delivery complete",
+}
+
+DELIVERY_STATUS_STAGE_STATUSES = {
+    "not started",
+    "not requested",
+    "in progress",
+    "blocked",
+    "completed",
+    "completed with limitations",
+    "declined",
+    "skipped",
+}
+
+PLANNING_STATUS_TO_STAGE_STATUS = {
+    "draft": "in progress",
+    "blocked": "blocked",
+    "ready for implementation": "completed",
+}
 
 PRODUCT_DESCRIPTION_HEADINGS = (
     "document purpose and source",
@@ -285,6 +339,47 @@ def missing_heading_names(text: str, required: Iterable[str]) -> list[str]:
     return [name for name in required if normalize_heading(name) not in available]
 
 
+def heading_body(text: str, heading: str, level: int) -> str | None:
+    """Return one Markdown heading body through the next peer or parent heading."""
+
+    expected = normalize_heading(heading)
+    entries = heading_entries(text)
+    for index, (entry_level, name, start) in enumerate(entries):
+        if entry_level != level or name != expected:
+            continue
+        line_end = text.find("\n", start)
+        body_start = len(text) if line_end < 0 else line_end + 1
+        body_end = len(text)
+        for next_level, _, next_start in entries[index + 1 :]:
+            if next_level <= level:
+                body_end = next_start
+                break
+        return text[body_start:body_end]
+    return None
+
+
+def unique_level_heading_body(
+    text: str,
+    heading: str,
+    level: int,
+    path: Path,
+    errors: list[str] | None,
+) -> str | None:
+    """Return a heading body only when its name occurs once at the required level."""
+
+    expected = normalize_heading(heading)
+    matches = [entry for entry in heading_entries(text) if entry[1] == expected]
+    if len(matches) != 1 or matches[0][0] != level:
+        if errors is not None:
+            exact_count = sum(entry_level == level for entry_level, _, _ in matches)
+            errors.append(
+                f"{path}: must contain exactly one level-{level} {heading!r} heading; "
+                f"found {len(matches)} total and {exact_count} at the required level"
+            )
+        return None
+    return heading_body(text, heading, level)
+
+
 def read_text(path: Path, errors: list[str]) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -367,10 +462,10 @@ def patterns_may_overlap(first: str, second: str) -> bool:
     )
 
 
-def expected_write_paths(markdown: str) -> list[str]:
-    """Extract real Markdown bullets while ignoring fenced and indented code."""
+def markdown_lines_outside_fences(markdown: str) -> list[str]:
+    """Return Markdown lines that are not inside fenced code blocks."""
 
-    paths: list[str] = []
+    lines: list[str] = []
     fence_character: str | None = None
     fence_length = 0
     for line in markdown.splitlines():
@@ -389,6 +484,15 @@ def expected_write_paths(markdown: str) -> list[str]:
             fence_character = marker[0]
             fence_length = len(marker)
             continue
+        lines.append(line)
+    return lines
+
+
+def expected_write_paths(markdown: str) -> list[str]:
+    """Extract real Markdown bullets while ignoring fenced and indented code."""
+
+    paths: list[str] = []
+    for line in markdown_lines_outside_fences(markdown):
         match = EXPECTED_WRITE_PATH_RE.match(line)
         if match:
             paths.append(match.group(1))
@@ -803,6 +907,191 @@ def validate_global_metadata(path: Path, text: str, warnings: list[str]) -> None
             warnings.append(f"{path}: top-of-document metadata may be missing '{marker}'")
 
 
+def normalize_inline_value(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value.startswith("`") and value.endswith("`"):
+        value = value[1:-1].strip()
+    return value
+
+
+def delivery_status_values(
+    text: str, stage_body: str | None
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Return unique metadata values and well-formed stage statuses."""
+
+    visible_text = "\n".join(markdown_lines_outside_fences(text))
+    metadata_values: dict[str, str] = {}
+    for field in DELIVERY_STATUS_METADATA_FIELDS:
+        field_values = re.findall(
+            rf"^-\s+\*\*{re.escape(field)}:\*\*\s+(\S.*)$",
+            visible_text[:2400],
+            re.IGNORECASE | re.MULTILINE,
+        )
+        if len(field_values) == 1:
+            metadata_values[field.casefold()] = normalize_inline_value(field_values[0])
+
+    stage_statuses: dict[str, str] = {}
+    if stage_body is not None:
+        for stage in DELIVERY_STATUS_STAGES:
+            rows = re.findall(
+                rf"^\|\s*{re.escape(stage)}\s*\|\s*([^|\n]+)\|"
+                r"\s*([^|\n]+)\|\s*([^|\n]+)\|\s*$",
+                stage_body,
+                re.IGNORECASE | re.MULTILINE,
+            )
+            if len(rows) == 1:
+                stage_statuses[stage.casefold()] = normalize_inline_value(
+                    rows[0][0]
+                ).casefold()
+    return metadata_values, stage_statuses
+
+
+def validate_delivery_status(
+    path: Path, text: str, errors: list[str], warnings: list[str]
+) -> None:
+    """Validate the concise derived operator view without making it authoritative."""
+
+    visible_text = "\n".join(markdown_lines_outside_fences(text))
+    stage_body = unique_level_heading_body(
+        visible_text, "stage status", 2, path, errors
+    )
+    metadata_values, stage_statuses = delivery_status_values(text, stage_body)
+    for field in DELIVERY_STATUS_METADATA_FIELDS:
+        field_values = re.findall(
+            rf"^-\s+\*\*{re.escape(field)}:\*\*\s+(\S.*)$",
+            visible_text[:2400],
+            re.IGNORECASE | re.MULTILINE,
+        )
+        if len(field_values) != 1:
+            errors.append(
+                f"{path}: top metadata must contain exactly one non-empty {field!r} field; "
+                f"found {len(field_values)}"
+            )
+        else:
+            metadata_values[field.casefold()] = normalize_inline_value(field_values[0])
+    summary_type = metadata_values.get("summary type", "").casefold()
+    if summary_type and summary_type != "derived human-readable delivery status":
+        errors.append(
+            f"{path}: Summary type must equal 'Derived human-readable delivery status'"
+        )
+    authority = metadata_values.get("authority", "").casefold()
+    if authority and not authority.startswith("non-authoritative"):
+        errors.append(
+            f"{path}: Authority must begin with 'Non-authoritative'"
+        )
+    current_stage = metadata_values.get("current stage", "").casefold()
+    if current_stage and current_stage not in DELIVERY_STATUS_CURRENT_STAGES:
+        errors.append(
+            f"{path}: Current stage must be one of "
+            f"{sorted(DELIVERY_STATUS_CURRENT_STAGES)}"
+        )
+    current_status = metadata_values.get("current status", "").casefold()
+    if current_status and current_status not in DELIVERY_STATUS_STAGE_STATUSES:
+        errors.append(
+            f"{path}: Current status must be one of "
+            f"{sorted(DELIVERY_STATUS_STAGE_STATUSES)}"
+        )
+    last_updated = metadata_values.get("last updated", "")
+    if last_updated:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", last_updated):
+            errors.append(f"{path}: Last updated must use valid YYYY-MM-DD format")
+        else:
+            try:
+                date.fromisoformat(last_updated)
+            except ValueError:
+                errors.append(f"{path}: Last updated must use valid YYYY-MM-DD format")
+    validate_headings(path, visible_text, DELIVERY_STATUS_HEADINGS, errors)
+    if stage_body is not None:
+        for stage in DELIVERY_STATUS_STAGES:
+            rows = re.findall(
+                rf"^\|\s*{re.escape(stage)}\s*\|\s*([^|\n]+)\|"
+                r"\s*([^|\n]+)\|\s*([^|\n]+)\|\s*$",
+                stage_body,
+                re.IGNORECASE | re.MULTILINE,
+            )
+            if len(rows) != 1:
+                errors.append(
+                    f"{path}: stage-status table must contain exactly one {stage!r} row; "
+                    f"found {len(rows)}"
+                )
+                continue
+            status = rows[0][0].strip().casefold()
+            if status not in DELIVERY_STATUS_STAGE_STATUSES:
+                errors.append(
+                    f"{path}: {stage!r} status must be one of "
+                    f"{sorted(DELIVERY_STATUS_STAGE_STATUSES)}"
+                )
+            if not rows[0][1].strip():
+                errors.append(f"{path}: {stage!r} outcome cell must not be empty")
+            if not rows[0][2].strip():
+                errors.append(f"{path}: {stage!r} evidence cell must not be empty")
+    if current_stage in stage_statuses and current_status:
+        if current_status != stage_statuses[current_stage]:
+            errors.append(
+                f"{path}: Current status {current_status!r} must match the "
+                f"{metadata_values.get('current stage')!r} stage row "
+                f"{stage_statuses[current_stage]!r}"
+            )
+    word_count = len(re.findall(r"\b[\w'-]+\b", visible_text))
+    if word_count > 1500:
+        warnings.append(
+            f"{path}: human delivery status is {word_count} words; keep it near one page"
+        )
+
+
+def validate_delivery_status_against_plan(
+    status_path: Path,
+    status_text: str,
+    readme_path: Path,
+    readme_text: str,
+    errors: list[str],
+) -> None:
+    """Require the planning row to agree with the canonical planning readiness."""
+
+    visible_readme = "\n".join(markdown_lines_outside_fences(readme_text))
+    readiness_body = unique_level_heading_body(
+        visible_readme,
+        "planning status and phase-readiness statement",
+        2,
+        readme_path,
+        errors,
+    )
+    if readiness_body is None:
+        return
+    matches = re.findall(
+        r"^-\s+\*\*Planning status:\*\*\s+(\S.*)$",
+        readiness_body,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    if len(matches) != 1:
+        errors.append(
+            f"{readme_path}: planning-readiness section must contain exactly one "
+            f"non-empty 'Planning status' field; found {len(matches)}"
+        )
+        return
+    planning_status = normalize_inline_value(matches[0]).casefold()
+    expected_stage_status = PLANNING_STATUS_TO_STAGE_STATUS.get(planning_status)
+    if expected_stage_status is None:
+        errors.append(
+            f"{readme_path}: Planning status must be one of "
+            f"{sorted(PLANNING_STATUS_TO_STAGE_STATUS)}"
+        )
+        return
+
+    visible_status = "\n".join(markdown_lines_outside_fences(status_text))
+    stage_body = unique_level_heading_body(
+        visible_status, "stage status", 2, status_path, None
+    )
+    _, stage_statuses = delivery_status_values(status_text, stage_body)
+    planning_row_status = stage_statuses.get("planning")
+    if planning_row_status and planning_row_status != expected_stage_status:
+        errors.append(
+            f"{status_path}: Planning row status {planning_row_status!r} disagrees with "
+            f"{readme_path.name} Planning status {planning_status!r}; expected "
+            f"{expected_stage_status!r}"
+        )
+
+
 def validate_required_file(
     path: Path,
     errors: list[str],
@@ -813,11 +1102,16 @@ def validate_required_file(
         errors.append(f"{path}: required file is empty or unreadable")
         return ""
 
-    validate_global_metadata(path, text, warnings)
+    if path.name == "delivery-status.md":
+        validate_delivery_status(path, text, errors, warnings)
+    else:
+        validate_global_metadata(path, text, warnings)
 
     required: tuple[str, ...] | None = None
     if path.name == "README.md":
         required = README_HEADINGS
+    elif path.name == "delivery-status.md":
+        required = None
     elif path.name == "00-product-description.md":
         required = PRODUCT_DESCRIPTION_HEADINGS
     elif path.name == "92-delivery-roadmap.md":
@@ -956,7 +1250,7 @@ def validate_component(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate docs/implementation-plan for the product planning skill."
+        description="Validate a planning root for the product planning skill."
     )
     parser.add_argument(
         "repository_root",
@@ -964,10 +1258,25 @@ def main() -> int:
         default=".",
         help="Target repository root (default: current directory)",
     )
+    parser.add_argument(
+        "--plan-root",
+        help=(
+            "Planning root to validate; relative paths resolve from repository_root "
+            "(default: docs/implementation-plan)"
+        ),
+    )
     args = parser.parse_args()
 
     repo_root = Path(args.repository_root).expanduser().resolve()
-    plan_root = repo_root / PLAN_RELATIVE_PATH
+    if args.plan_root:
+        selected_plan_root = Path(args.plan_root).expanduser()
+        plan_root = (
+            selected_plan_root
+            if selected_plan_root.is_absolute()
+            else repo_root / selected_plan_root
+        ).resolve()
+    else:
+        plan_root = repo_root / PLAN_RELATIVE_PATH
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -990,6 +1299,17 @@ def main() -> int:
         else:
             text = validate_required_file(path, errors, warnings)
             required_texts[filename] = text
+
+    readme_text = required_texts.get("README.md", "")
+    delivery_status_text = required_texts.get("delivery-status.md", "")
+    if readme_text and delivery_status_text:
+        validate_delivery_status_against_plan(
+            plan_root / "delivery-status.md",
+            delivery_status_text,
+            plan_root / "README.md",
+            readme_text,
+            errors,
+        )
 
     if scope is None:
         delivery_scope_mode = "full product"

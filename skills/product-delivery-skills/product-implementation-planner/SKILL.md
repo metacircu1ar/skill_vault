@@ -2,10 +2,10 @@
 name: product-implementation-planner
 description: Use this skill to create or normalize a product or change description and turn it, plus repository and relevant external-system evidence, into a production-grade architecture and phased implementation plan complete for the approved delivery scope under docs/implementation-plan/. Use for greenfield products, features in existing repositories, modernization or migration, remediation or reliability work, and start-to-finish delivery roadmaps. It clarifies principal decisions, records safe deferrals, assigns stable component and phase IDs, and prepares dependency-aware plans for an optional handoff to the parallel-plan-implementation skill. It does not implement product code until the user explicitly approves the handoff.
 metadata:
-  version: "2.4.0"
-  compatibility: "Requires a filesystem-enabled coding agent that can inspect a repository, write Markdown under docs/, and run Python 3 for structural validation. Decomposition-aware implementation requires `parallel-plan-implementation` >= 2.4.0; optional review requires `phase-commit-reviewer`. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; host support and explicit substitution approval are required."
+  version: "2.5.0"
+  compatibility: "Requires a filesystem-enabled coding agent that can inspect a repository, write Markdown under docs/, and run Python 3 for structural validation. Human-status-aware implementation requires `parallel-plan-implementation` >= 2.5.0; optional review requires `phase-commit-reviewer`. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; host support and explicit substitution approval are required."
   companion-skill: parallel-plan-implementation
-  companion-version: ">=2.4.0"
+  companion-version: ">=2.5.0"
   reviewer-skill: phase-commit-reviewer
 ---
 
@@ -18,10 +18,10 @@ The skill asks a consolidated, tailored set of principal-decision questions whos
 
 After intake, the skill classifies the delivery as full product, scoped change, modernization or migration, or remediation or reliability work. It inspects the repository broadly enough to establish the impact cone and deeply enough in affected areas, then produces or updates only the planning artifacts needed to cover the approved change, affected dependencies and interfaces, preserved behavior, migration and rollback, regression risk, and operational consequences. Full-product work covers every major component; bounded work plans only affected components and necessary shared foundations. It identifies dependency types, candidate contract boundaries, shared-state constraints, and preliminary parallel execution waves so that implementation can later be orchestrated without architectural guesswork or scope expansion.
 
-The skill validates the planning set, records whether it is Blocked, Draft, or Ready for implementation, and never edits product source code, dependencies, migrations, infrastructure, or runtime configuration while planning. Once all plans are complete and valid, it asks the user whether implementation should proceed through the companion `parallel-plan-implementation` skill. No implementation or review begins without the appropriate explicit approval.
+The skill validates the planning set, records whether it is Blocked, Draft, or Ready for implementation, and maintains a concise derived `delivery-status.md` that lets an operator understand the current stage and navigate to detailed evidence without treating the summary as a source of truth. It never edits product source code, dependencies, migrations, infrastructure, or runtime configuration while planning. Once all plans are complete and valid, it tells the operator that the status summary was updated and asks whether implementation should proceed through the companion `parallel-plan-implementation` skill. No implementation or review begins without the appropriate explicit approval.
 
 Primary inputs: product descriptions, PRDs, requirements, repository documents, source tree evidence, and user answers.
-Primary outputs: the complete canonical planning set under `docs/implementation-plan/`, stable identifiers, decision and dependency records, validation results, and an implementation handoff.
+Primary outputs: the complete canonical planning set under `docs/implementation-plan/`, a concise human-facing delivery status, stable identifiers, decision and dependency records, validation results, and an implementation handoff.
 Explicit non-goals: writing product code during planning, hiding ambiguity, inventing unsupported requirements, using shortcut architecture, or treating planning completion as permission to implement.
 -->
 
@@ -58,6 +58,7 @@ The planning set must:
 - expose cross-component and cross-phase dependencies as an acyclic graph;
 - distinguish requirements, decisions, assumptions, deferred decisions, blockers, and risks;
 - identify likely contract boundaries and repository ownership needed for later parallel implementation;
+- include one concise, derived human status document that links to the authoritative planning and later delivery evidence;
 - be detailed enough that implementers do not have to invent major architecture while coding.
 
 ## Non-negotiable rules
@@ -80,6 +81,7 @@ The planning set must:
 16. **Ground external contracts in evidence.** Mocks, fixtures, generated clients, existing wrappers, and plan-authored schemas are not independent evidence of a provider's behavior. Research material external semantics or record an explicit gap before treating the adapter contract as ready.
 17. **Do not turn impact analysis into scope expansion.** Inspect adjacent behavior to discover dependencies and regressions, but redesign or implement it only when it is inside the approved scope or is a necessary prerequisite recorded with rationale.
 18. **Select decomposition on independent axes.** Infer affected-subsystem architecture, domain and data ownership, change locality, language constraints, and operating needs; do not prescribe OOP, FP, Clean Architecture, GRASP, or another familiar pattern universally.
+19. **Maintain one human status summary.** The main stage orchestrator owns `docs/implementation-plan/delivery-status.md`. Keep it concise, derived, and link-based; never let it override canonical plans, manifests, ledgers, verification evidence, commits, or review reports. Tell the operator whenever a top-level delivery stage updates it.
 
 ## Workflow
 
@@ -255,7 +257,7 @@ Default root:
 docs/implementation-plan/
 ```
 
-Create or update `00-product-description.md` first, including its unique canonical delivery-scope block. Use relative links, stable kebab-case filenames, one component plan per in-scope component, stable IDs throughout, concise contract examples where needed, and no empty boilerplate documents. For bounded work, reuse existing authoritative documents and create or update only the canonical planning files named applicable by the scope record.
+Create or update `00-product-description.md` first, including its unique canonical delivery-scope block. Create or update `delivery-status.md` using the human-status contract in the reference; it is a derived operator view, not another planning authority. Use relative links, stable kebab-case filenames, one component plan per in-scope component, stable IDs throughout, concise contract examples where needed, and no empty boilerplate documents. For bounded work, reuse existing authoritative documents and create or update only the canonical planning files named applicable by the scope record.
 
 Mark the set `Draft`, `Blocked`, or `Ready for implementation`, and state exactly which phases are authorized.
 
@@ -279,7 +281,8 @@ Check that:
 14. the canonical delivery-scope record agrees with the planning documents, contains every planned phase exactly once, and authorizes only a subset of those phases;
 15. every omitted concern document has a preservation source, and every single-phase bounded component explains its atomicity;
 16. the decomposition assessment is structurally valid, its selected candidate passes every representative scenario, and every required alternative differs on a named axis while using the same scenarios;
-17. each persistent resource has one owner, every additional writer has an explicit coordination mechanism, and declared write paths agree with component and phase ownership.
+17. each persistent resource has one owner, every additional writer has an explicit coordination mechanism, and declared write paths agree with component and phase ownership;
+18. `delivery-status.md` is concise, identifies itself as derived and non-authoritative, summarizes all four delivery stages, and links to the current evidence without copying machine traces.
 
 When Python is available, run:
 
@@ -289,11 +292,15 @@ python3 <skill-root>/scripts/validate_plan.py <repository-root>
 
 Fix every error. Review and fix or explicitly justify warnings.
 
+If planning stops blocked after the planning root and normalized scope exist, update `delivery-status.md` with the blocker, safe completed work, evidence links, and required operator decision before returning control. Explicitly tell the operator that the summary was updated and give its path.
+
 ### Planning Phase 9 — Offer the implementation handoff
 
 Read `references/implementation-handoff.md`.
 
 After all planning documents are written and validated, do **not** begin implementation automatically.
+
+Before reporting the planning result or asking for handoff, update `delivery-status.md` with the planning outcome, current blockers and risks, material decisions, next operator action, and links to the detailed plan. In the same user-facing message, explicitly say that the human status summary was updated and give its path.
 
 - If at least one phase is authorized, ask one direct question: **“The implementation plan is complete for the approved scope. Should I proceed with implementation using the `parallel-plan-implementation` skill?”**
 - If no phase is authorized, state why implementation cannot safely start and ask whether the user wants the blocking decisions resolved.
@@ -313,6 +320,7 @@ Report:
 - architecture and delivery-model summary;
 - blockers, assumptions, deferred gates, and high risks;
 - validator result;
+- the path to the updated human delivery status and whether it requests operator action;
 - the implementation handoff question required by Planning Phase 9.
 
 Do not paste every planning document unless requested.
@@ -331,6 +339,7 @@ Planning is complete only when:
 - the selected decomposition, language constraints, affected-subsystem classifications, representative change scenarios, and data-writer registry are documented and validated;
 - testing, migration, rollback, observability, and production readiness are planned;
 - all documents are linked from the index;
+- the derived human delivery status is current for the planning stage and the operator was told where to find it;
 - validation passes without errors;
 - implementation has been explicitly offered but not started without approval.
 
@@ -352,6 +361,7 @@ Planning is complete only when:
 - marking dependent phases ready while their decisions remain open;
 - treating a mock, generated client, or legacy wrapper as authoritative provider documentation;
 - recording new provider evidence only in a ledger instead of updating the current external-system dossier and invalidating dependent plans;
+- copying detailed plans or machine traces into the human status summary, treating that summary as authoritative, or failing to tell the operator it was updated;
 - beginning implementation before asking the user.
 
 ## Example activations

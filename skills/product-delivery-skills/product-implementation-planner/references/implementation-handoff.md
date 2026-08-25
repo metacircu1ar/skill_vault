@@ -13,6 +13,7 @@ Offer implementation only after:
 - planning status and the canonical `planned_phase_ids` / `authorized_phase_ids` registries are explicit and validated;
 - stable component IDs, phase IDs, dependency edges, boundary candidates, and parallelization constraints exist;
 - the canonical decomposition assessment passes scenario, subsystem-classification, and data-owner validation;
+- `delivery-status.md` records the planning outcome, evidence links, and current operator action without redefining canonical scope;
 - blocking decisions are either resolved or exclude all phases being offered.
 
 ## Required implementation question
@@ -29,6 +30,7 @@ Pass the companion skill:
 
 - absolute repository root;
 - planning root, `docs/implementation-plan/`;
+- human delivery-status path, `docs/implementation-plan/delivery-status.md`, as a derived navigation aid rather than an authority;
 - planning-set status;
 - exact authorized component-phase IDs;
 - unresolved `DEC-###` gates and phases they block;
