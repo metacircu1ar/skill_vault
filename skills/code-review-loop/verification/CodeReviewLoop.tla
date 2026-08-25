@@ -9,9 +9,10 @@ WHY
 
 WHAT
   This module models arbitrary stale-file startup cleanup, an externally
-  launched passive reviewer, optional implementor context, reviewer findings
-  or NO_FINDINGS, atomic channel publication, another planned implementation
-  phase, implementor-owned shutdown, and one budgeted lock loss.
+  launched passive reviewer, mandatory implementor context on every request,
+  reviewer findings or NO_FINDINGS, atomic channel publication, another
+  planned implementation phase, implementor-owned shutdown, and one
+  budgeted lock loss.
 
   The six top-level variables use records for file, content, request, and
   fault state. Every action specifies each top-level next state, so TLC rejects
@@ -254,15 +255,15 @@ ClearImplementorMessage ==
         faults
         >>
 
-\* Declining or finishing the outbound message changes only implementor
-\* control state. The inbound reviewer final is acknowledged separately.
-SkipImplementorMessage ==
+\* A later request may reuse the complete published context unchanged. The
+\* inbound reviewer final is acknowledged separately.
+ReuseImplementorMessage ==
     /\ impl = "readyToMessage"
     /\ ~files.reviewLock
     /\ ~files.roundComplete
     /\ ~files.reviewerToImplementorTmp
     /\ ~files.implementorToReviewerTmp
-    /\ ~files.implementorToReviewerTxt
+    /\ files.implementorToReviewerTxt
     /\ impl' = "acknowledging"
     /\ UNCHANGED <<
         reviewer,
@@ -365,6 +366,7 @@ RequestReview ==
     /\ ~files.reviewerToImplementorTmp
     /\ ~files.reviewerToImplementorTxt
     /\ ~files.implementorToReviewerTmp
+    /\ files.implementorToReviewerTxt
     /\ impl' = "waiting"
     /\ files' = [files EXCEPT !.reviewLock = TRUE]
     /\ content' = [
@@ -439,11 +441,12 @@ RetryMissingRequest ==
         faults
         >>
 
-\* Entering reviewing represents the mandatory read of the optional frozen
-\* implementor message before the review decision can be produced.
+\* Entering reviewing represents the mandatory read of the frozen implementor
+\* context before the review decision can be produced.
 BeginReview ==
     /\ ReviewerPolling
     /\ files.reviewLock
+    /\ files.implementorToReviewerTxt
     /\ ~files.implementorToReviewerTmp
     /\ ~files.reviewerToImplementorTmp
     /\ ~files.reviewerToImplementorTxt
@@ -765,7 +768,7 @@ Next ==
     \/ StartReviewer
     \/ FinishInitialImplementation
     \/ ClearImplementorMessage
-    \/ SkipImplementorMessage
+    \/ ReuseImplementorMessage
     \/ StartImplementorMessage
     \/ PublishImplementorMessage
     \/ FinishImplementorMessage
@@ -802,7 +805,7 @@ Fairness ==
     /\ WF_vars(StartReviewer)
     /\ WF_vars(FinishInitialImplementation)
     /\ WF_vars(ClearImplementorMessage)
-    /\ WF_vars(SkipImplementorMessage)
+    /\ WF_vars(ReuseImplementorMessage)
     /\ WF_vars(StartImplementorMessage)
     /\ WF_vars(PublishImplementorMessage)
     /\ WF_vars(FinishImplementorMessage)
@@ -861,6 +864,13 @@ ImplementorMessageFrozenThroughReview ==
             content.implementorMessage =
                 content.submittedImplementorMessage)
 
+ReviewRequestsIncludeImplementorContext ==
+    (ProtocolStarted
+        /\ request.active
+        /\ request.decisionCount = 0) =>
+        /\ request.submittedImplementorMessagePresent
+        /\ files.implementorToReviewerTxt
+
 ImplementorMessagePublicationIsAtomic ==
     ProtocolStarted =>
         /\ ~(files.implementorToReviewerTmp /\
@@ -895,11 +905,10 @@ ReviewerUsesFrozenSnapshot ==
     (ProtocolStarted /\ ReviewerActive /\ files.reviewLock) =>
         /\ request.active
         /\ content.reviewedCode = content.submittedCode
-        /\ files.implementorToReviewerTxt =
-            request.submittedImplementorMessagePresent
-        /\ (~files.implementorToReviewerTxt \/
-            content.implementorMessage =
-                content.submittedImplementorMessage)
+        /\ request.submittedImplementorMessagePresent
+        /\ files.implementorToReviewerTxt
+        /\ content.implementorMessage =
+            content.submittedImplementorMessage
 
 ReviewerMessagePublishedBeforeUnlock ==
     [][files.reviewLock
@@ -1035,9 +1044,11 @@ ReviewerMessageEventuallyConsumed ==
     (ProtocolStarted /\ files.reviewerToImplementorTxt) ~>
         ~files.reviewerToImplementorTxt
 
-ImplementorMessageEventuallyRefreshedOrCleaned ==
-    (ProtocolStarted /\ files.implementorToReviewerTxt) ~>
-        ~files.implementorToReviewerTxt
+ImplementorContextEventuallyAvailable ==
+    (ProtocolStarted
+        /\ impl = "readyToMessage"
+        /\ ~files.implementorToReviewerTxt) ~>
+            files.implementorToReviewerTxt
 
 ReviewerMessageTempEventuallyPublished ==
     (ProtocolStarted

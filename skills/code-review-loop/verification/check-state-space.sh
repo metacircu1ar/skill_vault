@@ -5,8 +5,8 @@ verification_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 check_dir=$(mktemp -d "${TMPDIR:-/tmp}/code-review-loop-state-space.XXXXXX")
 trap 'rm -rf "$check_dir"' EXIT HUP INT TERM
 
-expected_states='2553 states generated, 1810 distinct states found, 0 states left on queue.'
-expected_depth='The depth of the complete state graph search is 31.'
+expected_states='1399 states generated, 930 distinct states found, 0 states left on queue.'
+expected_depth='The depth of the complete state graph search is 22.'
 
 if ! TLC_CONFIG=CodeReviewLoop.cfg \
     TLC_METADIR="$check_dir/states" \
@@ -29,4 +29,4 @@ if [ "$observed_states" != "$expected_states" ] || [ "$observed_depth" != "$expe
     exit 1
 fi
 
-echo "Expected state space confirmed: 2553 generated, 1810 distinct, depth 31."
+echo "Expected state space confirmed: 1399 generated, 930 distinct, depth 22."

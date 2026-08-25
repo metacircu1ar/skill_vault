@@ -38,7 +38,7 @@ The model covers:
 
 - cleanup from every possible combination of six stale startup files, with stale completion removed last;
 - externally ordered reviewer launch after startup cleanup;
-- optional implementor context on the first and later requests;
+- mandatory implementor context on every request, with an initial publication and later reuse or atomic refresh;
 - atomic publication for both directional channels;
 - opposite channel polarity: implementor publication while unlocked and reviewer publication while locked;
 - implementation and implementor-message freezing through a missing-lock retry gap;
@@ -65,7 +65,8 @@ The action relation assumes both agents follow the protocol. TLC checks complian
 | Reviewer-channel temp/final publication is atomic and writer-owned | `ReviewerMessagePublicationIsAtomic` |
 | Reviewer temp publication starts while the lock exists | `ReviewerMessagePublicationStartsWhileLocked` |
 | Published reviewer contents remain unchanged until implementor acknowledgement | `ReviewerMessageFrozenUntilConsumed` |
-| Reviewer decisions use the submitted implementation and optional context snapshot | `ReviewerUsesFrozenSnapshot` |
+| Every undecided request carries a frozen implementor context | `ReviewRequestsIncludeImplementorContext` |
+| Reviewer decisions use the submitted implementation and mandatory context snapshot | `ReviewerUsesFrozenSnapshot` |
 | A reviewer cannot unlock before a complete reviewer final exists | `ReviewerMessagePublishedBeforeUnlock` |
 | Decision counts and findings/`NO_FINDINGS` kinds agree with file state | `DecisionAccounting` |
 | Lock, feedback, completion, and logical-request state remain correlated | `RequestStateIsConsistent` |
@@ -82,7 +83,7 @@ The action relation assumes both agents follow the protocol. TLC checks complian
 | The externally launched reviewer eventually becomes active | `ReviewerEventuallyStarts` |
 | Every live review lock eventually unlocks after a decision | `ReviewRequestEventuallyReleased` |
 | `NO_FINDINGS` eventually continues into another phase or shutdown | `NoFindingsEventuallyContinuesOrShutsDown` |
-| Published messages and live temp publications progress through their lifecycles | `ReviewerMessageEventuallyConsumed`, `ImplementorMessageEventuallyRefreshedOrCleaned`, `ReviewerMessageTempEventuallyPublished`, `ImplementorMessageTempEventuallyPublished` |
+| Reviewer messages are consumed, missing implementor context is published before review, and live temp publications complete | `ReviewerMessageEventuallyConsumed`, `ImplementorContextEventuallyAvailable`, `ReviewerMessageTempEventuallyPublished`, `ImplementorMessageTempEventuallyPublished` |
 | Completion is eventually acknowledged and both actors terminate | `CompletionEventuallyAcknowledged`, `ShutdownEventuallyFinishes` |
 
 ## Run
@@ -110,7 +111,7 @@ TLA2TOOLS_SHA256=expected-digest \
 
 The runner verifies the pinned default jar's SHA-256 digest. A custom jar is verified when `TLA2TOOLS_SHA256` is supplied; otherwise the runner warns. `TLC_METADIR` selects the state directory, and `TLC_COVERAGE=1` enables action coverage.
 
-The recorded 2026-08-21 normal run completed without errors after generating 2,553 states, finding 1,810 distinct states, and reaching graph depth 31. TLC checked eleven temporal-property branches. All three negative mutation checks produced their expected violations.
+The recorded 2026-08-25 normal run completed without errors after generating 1,399 states, finding 930 distinct states, and reaching graph depth 22. TLC checked eleven temporal-property branches. All three negative mutation checks produced their expected violations.
 
 Coverage confirms both lock-loss locations and retry: `LosePollingLock`, `LoseActiveReviewLock`, and `RetryMissingRequest` are reachable. Both reviewer outcomes and both implementor choices after them are reachable, as are `PublishCompletion`, `AcknowledgeCompletion`, and `ObserveCompletionAcknowledged`. `RemoveCleanupReviewerTmp` and `RemoveCleanupImplementorTmp` remain at `0:0` because compliant publication ordering makes both temp files absent before final cleanup; they remain defensive actions matching the skill's remove-if-present instructions. Arbitrary stale temp cleanup is exercised during startup.
 
@@ -120,7 +121,7 @@ The simplified protocol intentionally delegates lifecycle isolation to external 
 
 Filesystem checks and subsequent writes or removals are separate real calls but single TLA+ actions. The model therefore does not prove compare-and-act atomicity. It does exercise one bounded lock deletion while the reviewer is polling, reviewing, or publishing, and proves that retry preserves the same frozen logical request. Repeated deletions and arbitrary lock loss after a decision are not modeled.
 
-After startup, temp files are reachable only while their compliant publisher is active. Fairness lets `AbortReviewAfterLockLoss` clear a reviewer temp before retry. TLC is untimed and does not model the skill's three-poll timeouts for a stuck temp or an unexpected completion marker, an owner crash leaving a permanently orphaned temp, arbitrary findings text, or whether an LLM understands and correctly acts on a message it read.
+After startup, temp files are reachable only while their compliant publisher is active. Fairness lets `AbortReviewAfterLockLoss` clear a reviewer temp before retry. TLC verifies that the implementor context file exists and remains frozen; it abstracts the required absolute paths, task source or full text, evidence explanation, and implementor notes rather than interpreting their prose. TLC is untimed and does not model the skill's three-poll timeouts for a stuck temp or an unexpected completion marker, an owner crash leaving a permanently orphaned temp, arbitrary findings text, or whether an LLM understands and correctly acts on a message it read.
 
 The model assumes the participating reviewer remains live long enough to remove the completion marker. The skill bounds the implementor's wait to three polls and otherwise leaves the marker as a durable pending-shutdown signal; that timeout branch is outside the model.
 

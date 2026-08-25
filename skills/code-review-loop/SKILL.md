@@ -47,7 +47,7 @@ The files deliberately carry no IDs or generation tags, so they cannot distingui
 All six working state files live in the repository root:
 
 - `.skill_vault_review_lock` — empty marker: a completed implementation snapshot is waiting for review.
-- `.skill_vault_implementor_to_reviewer.txt` — optional implementor-authored task context, diff explanation, test evidence, or response to feedback.
+- `.skill_vault_implementor_to_reviewer.txt` — implementor-authored review context. Its first publication is mandatory and contains the complete context handoff; later requests retain or atomically replace it with a complete current message.
 - `.skill_vault_reviewer_to_implementor.txt` — reviewer-authored findings or the exact `NO_FINDINGS` signal.
 - `.skill_vault_review_round_complete` — empty marker: the implementor has finished the whole plan and requests reviewer shutdown acknowledgement.
 - `.skill_vault_implementor_to_reviewer.tmp` — temporary output for atomic implementor-channel publication.
@@ -75,7 +75,7 @@ The channels have opposite lock polarity: the implementor publishes only while t
 
 1. The implementor does not modify implementation files or its outbound channel while the lock exists.
 2. The reviewer never modifies implementation files.
-3. The reviewer reads and considers the implementor final, if present, before reviewing each request.
+3. Every review request carries a complete implementor final, and the reviewer reads and considers it before reviewing.
 4. The implementor reads and considers the reviewer final before editing after a review.
 5. The reviewer atomically publishes findings or `NO_FINDINGS` before removing the lock.
 6. The implementor does not read reviewer feedback while the lock exists.
@@ -86,6 +86,7 @@ The channels have opposite lock polarity: the implementor publishes only while t
 11. The reviewer message remains unchanged after unlock until the implementor consumes it.
 12. A new lock is never created while a temp file or reviewer final remains.
 13. `NO_FINDINGS` means only that the submitted snapshot is clean. It does not end the loop while planned work remains.
+14. The first implementor message identifies the repository and every needed context directory by absolute path, and supplies the full task text unless an identified context source already contains it.
 
 ---
 
@@ -117,13 +118,28 @@ Perform this cleanup exactly once. It removes stale files but cannot stop an old
 4. Inspect staged, unstaged, and relevant untracked changes and make the tree coherent and reviewable.
 5. Do not create the lock while still editing or testing.
 
-Before every request, refresh the optional implementor channel while the lock is absent:
+### Publish the initial context handoff
 
-1. Remove stale implementor temp and final files.
-2. If there is nothing useful to say, leave both absent.
-3. Otherwise write the entire task context, explanation, evidence, response, or disagreement to `.skill_vault_implementor_to_reviewer.tmp`.
-4. Atomically rename the temp to `.skill_vault_implementor_to_reviewer.txt`.
-5. Verify that the temp is absent and the final is complete.
+Before the first review request, publish a mandatory, self-contained implementor message while the lock is absent. Its body must include:
+
+- **Repository:** the resolved absolute path to the repository being reviewed. Do not use `~`, environment-variable shorthand, or a relative path.
+- **Context directories:** the resolved absolute path of every directory the reviewer needs beyond the repository, with a short statement of what it contains. Include relevant evidence, log, crash-dump, reproduction, task-bundle, fixture, or other data directories. Write `None` when no additional directory is needed.
+- **Task:** either the full task text or the resolved absolute path to the exact context file or files that contain the full task. A directory path alone is not a task source; identify the file and where the operative task can be found. Include the full text directly when it exists only in conversation or was not supplied through a context directory.
+- **Review target and evidence:** what implementation or snapshot is being submitted, the relevant base or comparison when known, checks already run, and the evidence most useful for judging it.
+- **Implementor notes:** constraints, preserved behavior, known limitations, uncertain assumptions, responses to prior discussion, or any other information the implementor considers important for this review.
+
+Point to large logs, dumps, or evidence by absolute directory and useful filenames instead of copying their full contents into the channel. Do not omit task-relevant context merely because it is large; give the reviewer enough location and interpretation detail to inspect it.
+
+Publish atomically:
+
+1. Confirm the implementor temp and final are absent after startup cleanup.
+2. Write the complete context handoff to `.skill_vault_implementor_to_reviewer.tmp`.
+3. Atomically rename the temp to `.skill_vault_implementor_to_reviewer.txt`.
+4. Verify that the temp is absent and the final is complete.
+
+### Maintain context on later requests
+
+The implementor final must remain present for every later request. If the stable context and current notes remain accurate, leave it unchanged. If anything material changes, replace it atomically while unlocked: remove the old temp and final, write one complete replacement to the temp, then rename it to the final. A replacement must preserve the repository path, context-directory paths, and task source or full task text from the initial handoff while adding the current diff explanation, validation evidence, feedback response, disagreement, or other round-specific notes.
 
 ## Request review
 
@@ -132,7 +148,7 @@ Before creating the lock, confirm that:
 - the completion marker and lock are absent;
 - both temp files are absent;
 - the reviewer final is absent because any previous response was consumed;
-- the implementation and optional implementor final are complete.
+- the implementation and mandatory implementor final are complete and current.
 
 Create `.skill_vault_review_lock` as an empty file and verify that it exists and is empty. The lock is a marker, not a message channel. Freeze the implementation and implementor channel until the reviewer decides.
 
@@ -162,7 +178,7 @@ For every finding or nit:
 After addressing findings, or after `NO_FINDINGS` when another planned phase remains:
 
 1. Complete the next phase if applicable, run relevant checks, and inspect the tree.
-2. Refresh the implementor channel for the next request.
+2. Keep the implementor channel unchanged when its complete context remains current, or atomically replace it with a complete updated message.
 3. Remove the reviewer final only after fully consuming it. This is a separate receipt acknowledgement; never create or overwrite that file.
 4. Confirm that the completion marker, lock, both temp files, and reviewer final are absent.
 5. Create the next empty lock, freeze the snapshot, and resume polling.
@@ -217,7 +233,7 @@ Treat the implementation and implementor channel as frozen while the lock exists
 
 1. Re-check that the lock exists. If it disappeared, abort this attempt and return to polling without touching the final files.
 2. If the implementor temp exists, leave every coordination file unchanged and report an invalid snapshot.
-3. If the implementor final exists, read it completely and take its context, constraints, evidence, or response into account. Evaluate it against the code and requirements; do not assume it is correct.
+3. Require the implementor final. If it is absent, leave every coordination file unchanged and report an invalid snapshot. Otherwise read it completely and take its repository path, context paths, task, constraints, evidence, and notes into account. Evaluate them against the code and requirements; do not assume they are correct.
 4. Re-check that the lock exists, then remove any stale reviewer temp and final left by an interrupted reviewer publication.
 5. Inspect repository status, staged and unstaged changes relative to the appropriate base, relevant untracked implementation files, and enough surrounding code and tests to understand the effect.
 6. Never modify implementation files.
@@ -258,9 +274,9 @@ Publishing before unlocking is mandatory for both findings and `NO_FINDINGS`. If
 
 ~~~text
 IMPLEMENTOR removes all stale working files once
-IMPLEMENTOR edits/tests and optionally publishes context atomically
+IMPLEMENTOR edits/tests and publishes the complete initial context atomically
 IMPLEMENTOR creates an empty lock and freezes
-REVIEWER reads optional context and reviews
+REVIEWER reads the mandatory context and reviews
 REVIEWER atomically publishes findings or NO_FINDINGS
 REVIEWER removes the lock and keeps polling
 IMPLEMENTOR reads and consumes the response
@@ -281,6 +297,7 @@ if the whole plan is complete after NO_FINDINGS:
 - Lock disappears without reviewer temp or final: recreate it for the same frozen request.
 - Lock disappears with reviewer temp: wait up to three polls for it to clear, then report failure.
 - Implementor temp exists with a lock: reviewer leaves state unchanged and reports an invalid snapshot.
+- Implementor final is missing with a lock: reviewer leaves state unchanged and reports an invalid snapshot.
 - Reviewer cannot finish: leave the lock and do not publish a decision.
 - `NO_FINDINGS` with planned work remaining: continue the plan and request another review.
 - Completion acknowledgement does not arrive within three polls: leave the marker, report pending shutdown, and stop polling.
@@ -291,7 +308,7 @@ if the whole plan is complete after NO_FINDINGS:
 
 This protocol is modeled in the checked [TLA+ source](verification/CodeReviewLoop.tla). The model uses clean abstract file names without the skill's `.skill_vault_` prefix.
 
-The model covers arbitrary stale-file startup cleanup, delayed external reviewer launch, optional implementor context on first and later requests, incoming-message read gates, atomic channel publication, snapshot freezing, findings-or-`NO_FINDINGS` publication before unlock, bounded lock loss and same-snapshot retry, another planned phase after `NO_FINDINGS`, implementor-owned final cleanup and completion publication, reviewer acknowledgement, and clean termination.
+The model covers arbitrary stale-file startup cleanup, delayed external reviewer launch, mandatory implementor context on every request with a required initial publication and later reuse or atomic refresh, incoming-message read gates, snapshot freezing, findings-or-`NO_FINDINGS` publication before unlock, bounded lock loss and same-snapshot retry, another planned phase after `NO_FINDINGS`, implementor-owned final cleanup and completion publication, reviewer acknowledgement, and clean termination.
 
 The model assumes both agents follow the protocol and that external orchestration does not overlap a new loop with an old reviewer. Agent noncompliance, old-agent interference, semantic understanding of messages, and documented timeout/failure branches remain outside the abstraction as detailed in the [verification README](verification/README.md).
 
