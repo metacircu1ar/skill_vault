@@ -199,6 +199,17 @@ def resolve_ref(repo: Path, ref: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def last_commit_for_path(repo: Path, relative_path: str) -> str | None:
+    result = subprocess.run(
+        ["git", "-C", str(repo), "log", "-1", "--format=%H", "HEAD", "--", relative_path],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    value = result.stdout.strip()
+    return value if result.returncode == 0 and COMMIT_RE.fullmatch(value) else None
+
+
 def parent_of(repo: Path, commit: str) -> str | None:
     result = subprocess.run(
         ["git", "-C", str(repo), "rev-parse", f"{commit}^1"],
@@ -373,7 +384,8 @@ def main() -> int:
         if (review_root / name).is_file():
             validate_markdown(review_root / name, headings, errors)
 
-    manifest = read_json(review_root / "review-manifest.json", errors)
+    manifest_path = review_root / "review-manifest.json"
+    manifest = read_json(manifest_path, errors)
     top_required = (
         "schema_version", "status", "repository_root", "parallel_root", "review_root",
         "authorization_record", "review_baseline_commit", "pre_phase_base_commit",
@@ -843,9 +855,38 @@ def main() -> int:
     if status == "completed":
         if not commit_exists(repo, final_checkpoint):
             errors.append("completed review requires an existing final_code_checkpoint")
-        if not commit_exists(repo, metadata_commit):
-            errors.append("completed review requires an existing metadata_commit")
-        elif isinstance(final_checkpoint, str) and not is_ancestor(repo, final_checkpoint, metadata_commit):
+        resolved_metadata_commit: str | None = None
+        if metadata_commit == "self":
+            resolved_metadata_commit = last_commit_for_path(
+                repo, (REVIEW_ROOT / "review-manifest.json").as_posix()
+            )
+            if resolved_metadata_commit is None:
+                errors.append(
+                    "completed review metadata_commit='self' requires a committed review manifest"
+                )
+            else:
+                committed_manifest = git_show_json(
+                    repo,
+                    resolved_metadata_commit,
+                    (REVIEW_ROOT / "review-manifest.json").as_posix(),
+                )
+                if committed_manifest != manifest:
+                    errors.append(
+                        "metadata_commit='self' requires the current review manifest to "
+                        "match its latest committed version"
+                    )
+        elif commit_exists(repo, metadata_commit):
+            assert isinstance(metadata_commit, str)
+            resolved_metadata_commit = metadata_commit
+        else:
+            errors.append(
+                "completed review requires metadata_commit='self' or an existing metadata commit"
+            )
+        if (
+            isinstance(final_checkpoint, str)
+            and resolved_metadata_commit is not None
+            and not is_ancestor(repo, final_checkpoint, resolved_metadata_commit)
+        ):
             errors.append("metadata_commit must descend from final_code_checkpoint")
         current_chain = [review_by_phase[p].get("current_commit") for p in phase_order if p in review_by_phase]
         for earlier, later in zip(current_chain, current_chain[1:]):

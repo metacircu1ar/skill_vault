@@ -28,6 +28,7 @@ The review stage must not imitate a reduced reviewer when `phase-commit-reviewer
 - contract-first boundaries rather than prose-only coordination;
 - one canonical plan scope, schema-v2 execution authority, and unique scope blocks in immutable worker/reviewer packets;
 - one immutable decomposition assessment whose data ownership is checked against actual unit write paths;
+- one concise derived `delivery-status.md` updated and announced by the main orchestrator after implementation and review;
 - one worktree and one fresh implementor per eligible phase;
 - dependency-aware waves and explicit shared-path ownership;
 - one reviewable logical integration commit per phase;
@@ -40,6 +41,8 @@ The review stage must not imitate a reduced reviewer when `phase-commit-reviewer
 - backup refs, no silent force-push, and final full-suite validation.
 
 ## Generated implementation artifacts
+
+The planner-created `docs/implementation-plan/delivery-status.md` remains the cross-stage human view and links into the detailed packages below. It is not an execution authority.
 
 ```text
 docs/implementation-plan/parallel-implementation/
@@ -72,4 +75,4 @@ python3 <skill-root>/scripts/validate_parallel_plan.py <repository-root>
 python3 <skill-root>/scripts/validate_parallel_review.py <repository-root>
 ```
 
-The first validator checks boundaries, contracts, waves, decomposition and data ownership, profile records, and phase mappings. The second checks review authorization, reviewer prompts/results, original and rewritten commit maps, finding dispositions, backup/rewrite safety, and final validation evidence.
+The first validator checks boundaries, contracts, waves, decomposition and data ownership, reserved orchestrator paths, profile records, and phase mappings. The second checks review authorization, reviewer prompts/results, original and rewritten commit maps, finding dispositions, backup/rewrite safety, and final validation evidence.

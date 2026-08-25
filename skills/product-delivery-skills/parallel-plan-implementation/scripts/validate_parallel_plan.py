@@ -21,6 +21,7 @@ from typing import Any, Iterable
 
 PLAN_RELATIVE_PATH = Path("docs") / "implementation-plan"
 PARALLEL_RELATIVE_PATH = PLAN_RELATIVE_PATH / "parallel-implementation"
+DELIVERY_STATUS_PATH = "docs/implementation-plan/delivery-status.md"
 
 REQUIRED_FILES = (
     "README.md",
@@ -210,6 +211,8 @@ DECOMPOSITION_BEGIN = "<!-- decomposition-assessment:begin -->"
 DECOMPOSITION_END = "<!-- decomposition-assessment:end -->"
 PROMPT_SCOPE_BEGIN = "<!-- approved-scope:begin -->"
 PROMPT_SCOPE_END = "<!-- approved-scope:end -->"
+PROMPT_PATH_POLICY_BEGIN = "<!-- path-policy:begin -->"
+PROMPT_PATH_POLICY_END = "<!-- path-policy:end -->"
 PLAN_SCOPE_KEYS = {
     "schema_version",
     "delivery_scope_mode",
@@ -246,6 +249,13 @@ PROMPT_SCOPE_KEYS = {
     "impact_cone",
     "preserved_behavior",
     "non_goals",
+}
+PROMPT_PATH_POLICY_KEYS = {
+    "owned_paths",
+    "read_only_paths",
+    "shared_paths",
+    "generated_paths",
+    "forbidden_paths",
 }
 
 DELIVERY_SCOPE_MODES = {
@@ -415,6 +425,52 @@ def validate_prompt_scope(
     )
     if actual is not None and actual != expected:
         errors.append(f"{label}: approved-scope block does not match its immutable source")
+
+
+def path_policy_is_valid(value: Any) -> bool:
+    return isinstance(value, dict) and all(
+        isinstance(value.get(key), list)
+        and all(isinstance(item, str) for item in value.get(key, []))
+        for key in PROMPT_PATH_POLICY_KEYS
+    )
+
+
+def validate_prompt_path_policy(
+    text: str,
+    expected: dict[str, Any] | None,
+    label: str,
+    errors: list[str],
+) -> None:
+    if not path_policy_is_valid(expected):
+        errors.append(
+            f"{label}: source execution-manifest path policy must contain arrays of "
+            "strings for all five path fields"
+        )
+        expected = None
+    actual = parse_json_block(
+        text,
+        PROMPT_PATH_POLICY_BEGIN,
+        PROMPT_PATH_POLICY_END,
+        PROMPT_PATH_POLICY_KEYS,
+        label,
+        errors,
+        record_name="path policy",
+    )
+    if actual is None:
+        return
+    if not path_policy_is_valid(actual):
+        errors.append(f"{label}: path-policy fields must all be arrays of strings")
+        return
+    if expected is not None and actual != expected:
+        errors.append(f"{label}: path-policy block does not match its immutable source")
+    for path_kind in ("owned_paths", "shared_paths", "generated_paths"):
+        singular_kind = path_kind.removesuffix("_paths").replace("_", "-")
+        for write_path in actual[path_kind]:
+            if patterns_may_overlap(write_path, DELIVERY_STATUS_PATH):
+                errors.append(
+                    f"{label}: {singular_kind} path {write_path!r} overlaps "
+                    f"orchestration-owned {DELIVERY_STATUS_PATH!r}"
+                )
 
 
 def validate_plan_data_ownership(
@@ -1612,6 +1668,10 @@ def main() -> int:
 
             prompt_text = ""
             prompt_label = str(prompt_path)
+            expected_prompt_path_policy: dict[str, Any] | None = {
+                key: unit.get(key) for key in PROMPT_PATH_POLICY_KEYS
+            }
+            prompt_path_policy_is_immutable = False
             if prompt_path is not None and prompt_path.is_file():
                 prompt_text = read_text(prompt_path, errors)
                 working_prompt_text = prompt_text
@@ -1668,6 +1728,28 @@ def main() -> int:
                                 errors.append(
                                     f"unit {phase_id}: immutable base approved_scope differs from the current manifest"
                                 )
+                        committed_units = committed_manifest.get("units")
+                        base_unit_matches = (
+                            [
+                                record
+                                for record in committed_units
+                                if isinstance(record, dict) and record.get("id") == phase_id
+                            ]
+                            if isinstance(committed_units, list)
+                            else []
+                        )
+                        if len(base_unit_matches) != 1:
+                            errors.append(
+                                f"unit {phase_id}: immutable base manifest must contain "
+                                f"exactly one matching unit; found {len(base_unit_matches)}"
+                            )
+                            expected_prompt_path_policy = None
+                        else:
+                            expected_prompt_path_policy = {
+                                key: base_unit_matches[0].get(key)
+                                for key in PROMPT_PATH_POLICY_KEYS
+                            }
+                            prompt_path_policy_is_immutable = True
                 prompt_expectations = (
                     phase_id,
                     component_id,
@@ -1711,6 +1793,23 @@ def main() -> int:
             ):
                 list_values[key] = string_list(unit.get(key), f"{label}.{key}", errors)
 
+            current_path_policy = {
+                key: list_values[key] for key in PROMPT_PATH_POLICY_KEYS
+            }
+            if (
+                prompt_path_policy_is_immutable
+                and path_policy_is_valid(expected_prompt_path_policy)
+                and current_path_policy != expected_prompt_path_policy
+            ):
+                errors.append(
+                    f"{label}: current path policy differs from the immutable base manifest"
+                )
+
+            if prompt_text:
+                validate_prompt_path_policy(
+                    prompt_text, expected_prompt_path_policy, prompt_label, errors
+                )
+
             write_capable_paths = (
                 list_values["owned_paths"]
                 + list_values["shared_paths"]
@@ -1735,6 +1834,11 @@ def main() -> int:
             for path_kind in ("owned_paths", "shared_paths", "generated_paths"):
                 singular_kind = path_kind.removesuffix("_paths").replace("_", "-")
                 for write_path in list_values[path_kind]:
+                    if patterns_may_overlap(write_path, DELIVERY_STATUS_PATH):
+                        errors.append(
+                            f"{label}: {singular_kind} path {write_path!r} overlaps "
+                            f"orchestration-owned {DELIVERY_STATUS_PATH!r}"
+                        )
                     for read_only in list_values["read_only_paths"]:
                         if patterns_may_overlap(write_path, read_only):
                             errors.append(

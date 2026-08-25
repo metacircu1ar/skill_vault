@@ -62,11 +62,11 @@ Consume these contracts exactly. Do not change them unilaterally.
 
 ## Path policy
 
-- **Owned paths:** `<patterns>`
-- **Read-only paths:** `<patterns>`
-- **Shared paths:** `<patterns and named owner>`
-- **Generated paths:** `<patterns and generator>`
-- **Forbidden paths:** `<patterns>`
+<!-- path-policy:begin -->
+{"owned_paths":["<exact manifest patterns>"],"read_only_paths":["<exact manifest patterns>"],"shared_paths":["<exact manifest patterns>"],"generated_paths":["<exact manifest patterns>"],"forbidden_paths":["<exact manifest patterns>"]}
+<!-- path-policy:end -->
+
+The arrays above must exactly match this unit's immutable execution-manifest record. Shared-path reconciliation owners and generated-path generators remain defined by the linked boundary and manifest records.
 
 Do not modify paths outside this policy. Report the need as a blocker.
 

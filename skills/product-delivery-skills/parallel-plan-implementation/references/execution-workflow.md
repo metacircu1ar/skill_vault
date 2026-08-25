@@ -12,7 +12,7 @@ This reference contains the detailed procedures for Implementation Phases 0–8.
 4. Inspect uncommitted and untracked changes.
    - When they overlap planned paths, influenced the plan, or are otherwise required, do not exclude them silently. Obtain an explicit inclusion decision or safe snapshot strategy.
    - When they are unrelated, leave the user's checkout untouched and create a separate integration worktree from the committed baseline.
-5. Confirm that the planning documents are available inside the integration baseline. Commit only planning and orchestration documents on the dedicated integration branch; never sweep unrelated changes into that commit.
+5. Confirm that the planning documents and `docs/implementation-plan/delivery-status.md` are available inside the integration baseline. Read the latter only as a derived human navigation aid; canonical plans and evidence control. Commit only planning and orchestration documents on the dedicated integration branch; never sweep unrelated changes into that commit.
 6. Run the existing baseline build and tests. Record pre-existing failures rather than attributing them to workers.
 7. Run:
 
@@ -98,6 +98,8 @@ Each phase boundary must specify:
 Boundary documents describe reliance, not private implementation. Link to canonical schemas or declarations rather than copying definitions into multiple sources of truth.
 
 Create schema-v2 `execution-manifest.json` from `assets/execution-manifest.schema.json`. Copy its five typed approved-scope fields from the canonical delivery-scope block in `00-product-description.md` at `integration.planning_commit`; set `phase_ids` to executable units only, and verify each against that immutable plan's authorization registry. It is the machine-readable source for worker assignment, waves, branches, worktrees, paths, dependencies, contracts, validation, and status. Copy the five fields into exactly one approved-scope JSON block in every worker prompt.
+
+Reserve `docs/implementation-plan/delivery-status.md` for the main orchestrator. Do not include it in any worker's owned, shared, or generated paths. Workers may receive a link for orientation but never as scope or contract authority.
 
 ### Implementation Phase 3 — Freeze the contract baseline
 
@@ -232,7 +234,14 @@ After all approved units are integrated:
 6. preserve evidence of pre-existing failures and approved deviations;
 7. clean worker worktrees only when no unique work can be lost;
 8. retain branches with unmerged or disputed work;
-9. freeze the clean, buildable, passing integration commit as the potential review baseline;
-10. do not deploy or perform live migration without separate authorization.
+9. update `docs/implementation-plan/delivery-status.md`: set the **Implementation** row and current status, summarize completed phases and material deviations, name the review decision as the next operator action, and link to the execution manifest, implementation ledger, phase commits, and final validation evidence;
+10. preserve the planning and formal-verification rows, keep the summary derived and concise, and do not copy worker prompts, logs, or full manifests;
+11. rerun the planner and parallel-plan validators against the current repository so the updated orchestration package and human-status structure are checked;
+12. commit the final ledger, manifest, and human-status update in a separate orchestration metadata commit; never amend a phase commit merely to carry the summary;
+13. verify the branch is clean, buildable, and passing, then freeze that commit as the potential review baseline;
+14. explicitly tell the operator that the human delivery status was updated, give its path, state the implementation status, and say that the review decision is required;
+15. do not deploy or perform live migration without separate authorization.
 
 Do not offer review until the repository is clean and every required implementation check passes.
+
+If implementation stops blocked before Phase 8 can complete and control returns to the operator, update the same document with the blocker, safe completed work, detailed evidence links, and required operator action. Commit it with the corresponding orchestration records when the workflow is already committing delivery metadata; never sweep unrelated work into that commit. Then explicitly tell the operator where the summary is.

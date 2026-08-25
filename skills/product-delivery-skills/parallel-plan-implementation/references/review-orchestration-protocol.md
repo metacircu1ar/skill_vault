@@ -63,8 +63,14 @@ After all verified fixes are integrated:
 2. run affected phase and contract validations;
 3. run the complete repository build and quality suite again;
 4. verify migrations, generated artifacts, phase exit criteria, and preserved later functionality;
-5. validate implementation and review packages;
-6. verify the final branch is clean;
-7. record findings, dispositions, tests, old-to-new commits, final checkpoint, backup ref, profile evidence, and limitations;
-8. remove review worktrees only when no unique work exists;
-9. finish the skill without another generic question.
+5. record findings, dispositions, tests, old-to-new commits, final code checkpoint, backup ref, profile evidence, and limitations in the review artifacts; keep the review manifest at `status: validating` with `metadata_commit: pending` during pre-commit checks;
+6. update `docs/implementation-plan/delivery-status.md` from the final review manifest, ledger, commit map, and validation evidence: set the **Review** row and current status, summarize material fixes and residual risks, state any operator action, and link rather than copying detailed findings or traces;
+7. validate the implementation, pre-completion review, and current planner packages so the review records and human-status structure are checked;
+8. set the review manifest to `status: completed` and `metadata_commit: self`, then commit the resolved review records and human-status update in one separate orchestration metadata commit after all rewritten phase hashes exist; `self` denotes the commit containing that exact manifest, avoiding an impossible literal SHA self-reference; never amend a phase commit merely to carry the summary;
+9. rerun the implementation, completed-review, and planner validators from the committed tip so `metadata_commit: self` and the final clean package are checked;
+10. verify the final branch is clean;
+11. remove review worktrees only when no unique work exists;
+12. explicitly tell the operator that the human delivery status was updated, give its path, state the review outcome, and say whether any action remains;
+13. finish the skill without another generic question.
+
+If review stops blocked before Phase 14 completes and control returns to the operator, perform the same status update and notification using the latest authoritative review evidence. Commit it with the corresponding orchestration records when the workflow is already committing review metadata; never sweep unrelated work into that commit. Reviewer agents remain read-only and never update the cross-stage summary themselves.

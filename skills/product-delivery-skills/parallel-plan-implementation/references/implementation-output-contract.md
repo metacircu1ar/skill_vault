@@ -22,6 +22,12 @@ docs/implementation-plan/parallel-implementation/
 
 Do not create boundary documents for components outside the user-approved scope. Record excluded or blocked phases in the manifest with reasons.
 
+## Cross-stage human delivery status
+
+`docs/implementation-plan/delivery-status.md` remains outside this nested orchestration directory. It is the concise, derived operator view created by the planner. The main implementation orchestrator updates its **Implementation** row after final implementation verification or when implementation returns blocked, and updates its **Review** row after review completes, is declined, or returns blocked. Implementors and read-only reviewers never edit it.
+
+The summary links to `execution-manifest.json`, `implementation-ledger.md`, phase commits, review artifacts, and validation evidence instead of copying them. It never grants scope, changes a status in a manifest or ledger, resolves a finding, or overrides a commit or test result. After each top-level update, the main orchestrator explicitly tells the operator the path, current stage/status, and required action. Run the planner validator against the current repository after updating it. When implementation or review artifacts are being committed, include the summary in the separate orchestration metadata commit; never amend a phase commit solely to carry a human-status update.
+
 ## Global conventions
 
 Use stable IDs:
@@ -211,11 +217,12 @@ A boundary file must contain a `### PH-###-## — ...` section for every include
 
 Create one prompt per worker unit from `assets/worker-prompt-template.md`.
 
-The prompt is an execution packet, not a generic role description. It must identify exact paths, contracts, checks, commit requirements, and blocker behavior. Copy the five typed fields into the template's one raw JSON scope block. Reject duplicate blocks or keys. The validator cross-checks the prompt and execution manifest as stored in the unit's immutable base commit.
+The prompt is an execution packet, not a generic role description. It must identify exact paths, contracts, checks, commit requirements, and blocker behavior. Copy the five typed scope fields into the template's one raw JSON scope block, and copy the unit's `owned_paths`, `read_only_paths`, `shared_paths`, `generated_paths`, and `forbidden_paths` into its one raw JSON path-policy block. Reject duplicate blocks or keys. The validator cross-checks both blocks against the execution manifest stored in the unit's immutable base commit, cross-checks the current manifest against that immutable path policy, and rejects any prompt write grant overlapping the orchestrator-owned human status.
 
 ## Update discipline
 
 - The main agent owns all orchestration documents.
+- The main agent alone owns the cross-stage `delivery-status.md`; workers and reviewers treat it as read-only.
 - Workers treat these files as read-only unless explicitly assigned to documentation-only work.
 - Update the manifest and ledger after every material state transition.
 - Commit boundary and manifest changes before workers rely on them.
@@ -240,7 +247,7 @@ Conform to schema version 2 in `assets/review-manifest.schema.json`. Record:
 - reviewer prompts that reproduce the review-baseline execution manifest's typed approved-scope fields exactly, plus each prompt's exact-byte `prompt_sha256`;
 - plan, boundary, contract, prompt, and findings paths;
 - one main-agent disposition per finding;
-- finding counts, regression-test count, validation results, final code checkpoint, and metadata commit.
+- finding counts, regression-test count, validation results, final code checkpoint, and metadata commit (`self` in a completed manifest means the commit containing that exact manifest).
 
 ### `parallel-review/findings/<phase>.json`
 
@@ -260,4 +267,4 @@ Record reviewer dispatches, raw findings, main-agent dispositions, assigned phas
 
 ## Review metadata self-reference
 
-Do not place final rewritten commit IDs inside the same phase commits whose hashes those fields describe. After history reconstruction and final validation, create a separate orchestration metadata commit containing the resolved old-to-new map and final evidence.
+Do not place final rewritten commit IDs inside the same phase commits whose hashes those fields describe. After history reconstruction and pre-completion validation, set the completed review manifest's `metadata_commit` to `self` and create one separate orchestration metadata commit containing that exact manifest, the resolved old-to-new map, final evidence, and the human status update. Rerun validation from the committed tip; the validator resolves `self` to the latest commit containing the manifest and rejects an uncommitted or different working copy.

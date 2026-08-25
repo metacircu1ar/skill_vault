@@ -2,10 +2,10 @@
 name: parallel-plan-implementation
 description: Implements an approved, validated product or change plan through contract-first boundaries, evidence-backed external adapters, dependency-aware parallel waves, isolated Git worktrees, specialized implementor agents, ordered phase commits, and an optional parallel phase-commit review. Use for full-product, scoped feature, modernization or migration, and remediation or reliability plans under docs/implementation-plan/, and only after explicit implementation approval. After the approved scope is integrated and the repository is buildable and passing, it separately asks whether fresh reviewer agents should inspect every phase commit; the main agent verifies findings, amends fixes and practical regression tests into the responsible commits, safely replays descendants, and restores a clean passing tip.
 metadata:
-  version: "2.4.0"
-  compatibility: "Requires a filesystem-enabled coding agent, Python 3 validation, Git worktrees, product build/test tooling, and a host that can spawn isolated subagents. Decomposition-aware handoff requires `product-implementation-planner` >= 2.4.0. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; substitutions need explicit approval. Optional review requires `phase-commit-reviewer` >= 1.3.0."
+  version: "2.5.0"
+  compatibility: "Requires a filesystem-enabled coding agent, Python 3 validation, Git worktrees, product build/test tooling, and a host that can spawn isolated subagents. Human-status-aware handoff requires `product-implementation-planner` >= 2.5.0. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; substitutions need explicit approval. Optional review requires `phase-commit-reviewer` >= 1.3.0."
   companion-for: "product-implementation-planner"
-  companion-version: ">=2.4.0"
+  companion-version: ">=2.5.0"
   reviewer-skill: "phase-commit-reviewer"
   reviewer-skill-version: ">=1.3.0"
 ---
@@ -21,10 +21,10 @@ For each eligible phase, the skill creates a dedicated branch and Git worktree a
 
 After every authorized phase is integrated and the repository is clean, buildable, and passing, the skill asks the user whether parallel review is required. If approved, it creates review manifests and one context-complete assignment per phase commit, then launches one fresh read-only reviewer agent per commit using the requested `gpt-5.6-sol` / `xhigh` profile. Each reviewer is pinned to the exact parent-to-target commit diff and receives the relevant plans, boundaries, contracts, repository rules, callers and callees, phase map, later-phase summaries, and frozen final baseline. Reviewers use the phase-aware xhigh code-review protocol and return structured findings without editing code or Git history.
 
-The main agent independently verifies every reported finding, rejects false positives, deduplicates shared mechanisms, determines whether an issue remains in the final state, assigns each confirmed issue to the earliest responsible phase, and designs a regression test where practical. It then performs one controlled history reconstruction from the earliest affected phase: creates a backup reference and rewrite branch, amends fixes and phase-valid tests into the responsible phase commits, replays all later commits in order, preserves corrected earlier invariants and intended later behavior, resolves conflicts, records the old-to-new commit map, and reruns the complete validation suite. It never silently rewrites published or protected history, never force-pushes without separate authorization, and never claims parallel execution or model identities the host did not actually provide.
+The main agent independently verifies every reported finding, rejects false positives, deduplicates shared mechanisms, determines whether an issue remains in the final state, assigns each confirmed issue to the earliest responsible phase, and designs a regression test where practical. It then performs one controlled history reconstruction from the earliest affected phase: creates a backup reference and rewrite branch, amends fixes and phase-valid tests into the responsible phase commits, replays all later commits in order, preserves corrected earlier invariants and intended later behavior, resolves conflicts, records the old-to-new commit map, and reruns the complete validation suite. After implementation and again after optional review, it updates the derived cross-stage `delivery-status.md` and explicitly tells the operator where to read the concise result. It never silently rewrites published or protected history, never force-pushes without separate authorization, and never claims parallel execution or model identities the host did not actually provide.
 
 Primary inputs: an approved validated planning set, repository state, authorized phase IDs, user implementation approval, applicable external-system evidence and access limits, and optional later review approval.
-Primary outputs: frozen boundaries and contracts, execution and review manifests, worker and reviewer prompts, isolated phase branches/worktrees, one logical commit per phase, implementation and review ledgers, verified fixes and regression tests, commit mappings, and a final clean buildable passing repository.
+Primary outputs: frozen boundaries and contracts, execution and review manifests, worker and reviewer prompts, isolated phase branches/worktrees, one logical commit per phase, implementation and review ledgers, an updated human delivery status, verified fixes and regression tests, commit mappings, and a final clean buildable passing repository.
 Explicit non-goals: maximizing worker count at the expense of safety, allowing prose-only or unstable interfaces, merging by finish time, letting workers invent architecture, accepting reviewer findings without verification, silently substituting models, rewriting shared history without authorization, or finishing while required checks fail.
 -->
 
@@ -60,6 +60,7 @@ Create and execute a controlled implementation workflow in which:
 - the main agent integrates completed work in dependency order;
 - each phase receives an identifiable integration commit and objective validation evidence;
 - the repository reaches a clean, buildable, passing state with an implementation ledger under `docs/implementation-plan/parallel-implementation/`;
+- the main agent updates `docs/implementation-plan/delivery-status.md` and tells the operator where to find the implementation outcome;
 - the user is then asked whether parallel review is needed;
 - when approved, one fresh reviewer inspects each phase commit with complete plan/boundary/contract context;
 - the main agent verifies and assigns findings, adds fixes and practical regression tests to the responsible phase commits, safely replays later commits, and restores a clean passing final state.
@@ -108,6 +109,7 @@ A fix belongs in the earliest responsible phase where the corrected implementati
 28. **Gate external access.** Public documentation and repository evidence may be read safely; private/live access must be authorized, and read access never implies sandbox, canary, production, quota-consuming, or destructive writes.
 29. **Honor the approved change boundary.** Implement only authorized phases and necessary recorded prerequisites. Whole-repository inspection and regression testing identify impact; they do not authorize adjacent redesign, cleanup, or feature work.
 30. **Preserve decomposition and data ownership.** Boundary materialization may correct execution classifications, but it must not silently replace the selected decomposition or grant a component undeclared write ownership. Contradictory path or dependency evidence requires plan amendment or explicit serialization consistent with the plan.
+31. **Keep the human status derived.** Only the main orchestrator updates `delivery-status.md`; implementors and reviewers treat it as read-only. Summarize and link to canonical execution or review evidence, never copy machine traces or use the summary to override scope, manifests, ledgers, commits, tests, or findings. Tell the operator after implementation and after review updates.
 
 ## Required inputs
 
@@ -115,6 +117,7 @@ Locate or receive:
 
 - repository root;
 - planning root, `docs/implementation-plan/`;
+- derived human status path, `docs/implementation-plan/delivery-status.md`, for operator navigation only;
 - delivery scope mode, requested outcome, impact cone, preserved behavior, and explicit non-goals;
 - the canonical decomposition assessment, selected candidate, affected-subsystem classifications, and data-writer registry from `93-implementation-units.md`;
 - exact user-approved scope;
@@ -145,6 +148,8 @@ Read `references/execution-workflow.md` completely and follow its detailed Phase
 
 Run `scripts/validate_parallel_plan.py` before dispatch, after material changes, and after final implementation integration. Do not offer review until Phase 8 is green.
 
+When Phase 8 completes or implementation stops blocked, update the human delivery status and notify the operator as defined in `references/execution-workflow.md` before yielding control.
+
 When an approved phase touches a material external system, read `references/external-system-fidelity.md` before freezing its boundary or dispatching its worker. Keep this conditional; purely internal phases do not need provider material.
 
 ### Implementation Phase 9 — Ask whether parallel review is needed
@@ -153,7 +158,8 @@ After Phase 8 succeeds, ask exactly one direct question:
 
 > Implementation and integration are complete for the approved scope, and the project is buildable and passing. Should I run a parallel review of every phase commit?
 
-- If the user declines, record `review_gate.status = declined`, finish the skill, and report the green implementation state.
+- Before asking, confirm that `delivery-status.md` records the green implementation outcome and names the review decision as the operator action. In the same message, tell the operator that the summary was updated and give its path.
+- If the user declines, record `review_gate.status = declined`, update the **Review** row to `Declined`, validate and commit those records in a separate orchestration metadata commit, verify the branch is clean, tell the operator that the summary was updated, finish the skill, and report the green implementation state.
 - If the user approves, record the authorization and continue without asking a second generic confirmation.
 - If the implementation is not green, do not ask; fix or report the blocker first.
 - Review approval does not authorize remote force-push, production deployment, or other irreversible actions.
@@ -170,6 +176,8 @@ After affirmative review authorization, read `references/review-orchestration-pr
 
 Reviewers are read-only. Reviewer reports are immutable evidence. Only the main agent may adjudicate findings, edit code, change contracts, resolve replay conflicts, amend commits, or decide that a reported issue is rejected, duplicate, already fixed, reassigned, or blocked.
 
+At the end of Review Phase 14 or when review stops blocked, update the **Review** row and current delivery status from the authoritative review manifest, ledger, commit map, and validation evidence. Explicitly tell the operator that the human summary was updated, give its path, and state any remaining action.
+
 ## Final response to the user
 
 Report:
@@ -184,7 +192,8 @@ Report:
 - contract changes, deviations, unresolved blockers, and remaining risks;
 - external-system claims exercised, conformance evidence obtained, remaining fidelity gaps, and external actions left gated;
 - backup/rewrite refs and retained worktrees;
-- production, deployment, remote-history, or launch actions still requiring authorization.
+- production, deployment, remote-history, or launch actions still requiring authorization;
+- the path to the updated human delivery status, its current stage/status, and whether operator action is required.
 
 Do not claim success for a phase or review fix whose exit criteria or required validation did not pass.
 
@@ -199,6 +208,7 @@ The skill may finish when:
 - each phase has one traceable logical commit;
 - required checks pass and the repository is clean, buildable, and passing;
 - execution documentation and profile records are current;
+- the human delivery status records the implementation outcome and declined review, and the operator was told where to find it;
 - every external-adapter phase in scope has applicable characterization or conformance evidence; mock-only success is insufficient;
 - the user declined parallel review;
 - irreversible production and remote-history actions remain separately gated.
@@ -217,6 +227,7 @@ In addition to the conditions above:
 - original-to-current commit mapping is complete;
 - the final repository is clean, buildable, and passing;
 - implementation and review validators pass;
+- the human delivery status records the final review outcome and the operator was told where to find it;
 - no remote history was rewritten without separate authorization.
 
 ## Common failure modes to avoid
@@ -244,7 +255,8 @@ In addition to the conditions above:
 - amending published history or force-pushing silently;
 - losing later phase behavior while replaying descendants;
 - updating final commit hashes inside commits whose own hashes are being recorded;
-- calling work parallel when one agent actually performed it sequentially.
+- calling work parallel when one agent actually performed it sequentially;
+- letting workers or reviewers edit the human status, treating it as authority, copying raw traces into it, or finishing a top-level stage without telling the operator it was updated.
 
 ## Example requests that should activate this skill
 
