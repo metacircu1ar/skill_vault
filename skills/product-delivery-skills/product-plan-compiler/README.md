@@ -105,19 +105,23 @@ The central engineering artifact is the formal IR. It lets the same product rule
 When used with the canonical planner output, a run leaves behind:
 
 ```text
-docs/implementation-plan/formal-verification/
-  00-scope-and-sources.md       source baseline, plan version, included scope
-  01-normalized-plan.md         canonical terminology and requirement IDs
-  02-formal-ir.yaml             entities, operations, properties, assumptions
-  03-traceability.md            plan <-> IR <-> model <-> result links
-  04-open-questions.md          unresolved semantic choices
-  models/                       native formal source files by backend
-  runs/                         immutable commands, versions, output, traces
-  refinement-ledger.md          why each iteration changed
-  verification-report.md        final scoped conclusion and handoff status
+<plan-root>/
+  delivery-status.md             concise derived operator view
+  formal-verification/
+    00-scope-and-sources.md       source baseline, plan version, included scope
+    01-normalized-plan.md         canonical terminology and requirement IDs
+    02-formal-ir.yaml             entities, operations, properties, assumptions
+    03-traceability.md            plan <-> IR <-> model <-> result links
+    04-open-questions.md          unresolved semantic choices
+    models/                       native formal source files by backend
+    runs/                         immutable commands, versions, output, traces
+    refinement-ledger.md          why each iteration changed
+    verification-report.md        final scoped conclusion and handoff status
 ```
 
-For a plan stored elsewhere, the skill places `formal-verification/` under that plan root and records the choice.
+`<plan-root>` defaults to `docs/implementation-plan/`. For a plan stored elsewhere, the skill places `formal-verification/` and `delivery-status.md` under that selected root, records the choice, and invokes the planner validator with `--plan-root <plan-root>`.
+At the end of the verification stage, the main compiler agent updates the **Formal verification** row in `<plan-root>/delivery-status.md` and explicitly tells the operator its path, current status, and any required decision. The detailed verification report and immutable run evidence remain authoritative.
+Direct handoff to `parallel-plan-implementation` requires the canonical default root; a verified non-default corpus must first be explicitly normalized there through the planner and revalidated.
 
 ## Formal intermediate representation
 

@@ -58,6 +58,8 @@ Invoke the same skill on both agents with the appropriate role:
 
 The default delivery sequence is `product-implementation-planner` → `product-plan-compiler` → `parallel-plan-implementation` → `phase-commit-reviewer`.
 
+Across that sequence, the main stage orchestrator maintains `docs/implementation-plan/delivery-status.md` as a concise, derived human view of scope, stage outcomes, decisions, blockers, and evidence links. It remains non-authoritative, and the operator is explicitly told its path and any required action after planning, formal verification, implementation, and optional review.
+
 Each product-delivery skill includes its supporting references, templates, schemas, scripts, and a dedicated README.
 
 ### Audit skills

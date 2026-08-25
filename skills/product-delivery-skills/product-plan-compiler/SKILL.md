@@ -2,10 +2,12 @@
 name: product-plan-compiler
 description: Use this skill after a detailed product, feature, modernization, migration, remediation, or system plan exists—especially one produced by product-implementation-planner—to extract a traceable formal domain model for the approved scope, select a complementary verification portfolio across Alloy, SMT, TLA+/TLC/Apalache/TLAPS, Lean, Rocq, or Arend, run the native tools, challenge external-system abstractions, and refine the plan and formalization until they agree before implementation.
 metadata:
-  version: "1.2.0"
-  compatibility: "Requires a filesystem-enabled coding agent that can read and update planning documents and execute the native backends selected for checked claims. Missing tooling remains an explicit scoped gap; a fallback does not replace native verification. Intended upstream: `product-implementation-planner`; intended downstream: `parallel-plan-implementation`."
+  version: "1.3.0"
+  compatibility: "Requires a filesystem-enabled coding agent that can read and update planning documents and execute the native backends selected for checked claims. Missing tooling remains an explicit scoped gap; a fallback does not replace native verification. Human-status-aware delivery requires `product-implementation-planner` >= 2.5.0 upstream and `parallel-plan-implementation` >= 2.5.0 downstream."
   upstream-skill: product-implementation-planner
+  upstream-version: ">=2.5.0"
   downstream-skill: parallel-plan-implementation
+  downstream-version: ">=2.5.0"
   reviewer-skill: phase-commit-reviewer
   stage: plan-verification
 ---
@@ -14,7 +16,7 @@ COMPLETE SKILL DESCRIPTION
 This planning-verification skill compiles a detailed product or change plan into a traceable formal intermediate representation and an obligation-driven portfolio of executable prover or model-checker programs. It verifies the approved domain and change—not merely the agents that authored the plan—by modeling relevant entities, relations, lifecycles, operations, permissions, failures, concurrency, safety, liveness, compatibility, and preserved behavior.
 It selects complementary backends by obligation, including Alloy, SMT, TLA+/TLC/Apalache/TLAPS, Lean, Rocq, and Arend; runs the native tools; preserves commands, versions, bounds, assumptions, and traces; and translates every counterexample or failed proof obligation back into the language and requirement IDs of the source plan. It treats formal environment abstractions and test doubles as claims that require real-system evidence, not as evidence merely because they agree with one another.
 The skill iteratively classifies defects in the plan, model, property, assumptions, bounds, or encoding, changes one layer at a time, and reruns affected checks plus regression, witness, non-vacuity, and mutation checks. Semantic plan changes require an explicit product decision and are never hidden inside a passing model.
-Its normal upstream is `product-implementation-planner`. It remains planning-only, writes verification artifacts under `docs/implementation-plan/formal-verification/`, and offers an explicit handoff to `parallel-plan-implementation` only after the plan, IR, formal programs, properties, assumptions, bounds, and native results converge for the documented scope.
+Its normal upstream is `product-implementation-planner`. It remains planning-only, writes verification artifacts under `<plan-root>/formal-verification/`, updates the derived cross-stage `<plan-root>/delivery-status.md`, and tells the operator where that human summary is after the verification stage completes or blocks. It offers an explicit handoff to `parallel-plan-implementation` only after the plan, IR, formal programs, properties, assumptions, bounds, and native results converge for the documented scope.
 -->
 # Product Plan Compiler
 
@@ -39,7 +41,7 @@ parallel-plan-implementation
 phase-commit-reviewer
 ```
 
-Default input is the scope-complete planning corpus under `docs/implementation-plan/`. Default compiler output is `docs/implementation-plan/formal-verification/`. When the source plan lives elsewhere, place the verification workspace adjacent to it and record the chosen paths.
+Set `<plan-root>` to the directory containing the scope-complete planning corpus; it defaults to `docs/implementation-plan/`. Read `<plan-root>/delivery-status.md` only as a human navigation aid; canonical scope and requirements still come from their detailed sources. Place compiler output under `<plan-root>/formal-verification/` and record a non-default selected root in the verification scope and source record.
 
 Read the planner's unique canonical delivery-scope block—including mode, outcome, impact cone, preserved behavior, non-goals, and planned phases—before choosing verification obligations; reject duplicate or contradictory scope declarations rather than selecting whichever is convenient. Full-product verification may cover the complete plan. For scoped change, modernization or migration, and remediation or reliability work, cover the changed rules, invariants that must remain true, compatibility and migration behavior, and affected interfaces or interactions. Unchanged product behavior outside the impact cone may be excluded with a recorded rationale and source baseline; discovering an unrelated concern does not silently expand the authorized scope.
 
@@ -64,27 +66,30 @@ Given a detailed plan:
 Create or maintain:
 
 ```text
-docs/implementation-plan/formal-verification/
-  00-scope-and-sources.md
-  01-normalized-plan.md
-  02-formal-ir.yaml
-  03-traceability.md
-  04-open-questions.md
-  models/
-    <tool>/
-  runs/
-    <run-id>/
-      command.txt
-      versions.txt
-      configuration.*
-      stdout.txt
-      stderr.txt
-      result.md
-  refinement-ledger.md
-  verification-report.md
+<plan-root>/
+  delivery-status.md
+  formal-verification/
+    00-scope-and-sources.md
+    01-normalized-plan.md
+    02-formal-ir.yaml
+    03-traceability.md
+    04-open-questions.md
+    models/
+      <tool>/
+    runs/
+      <run-id>/
+        command.txt
+        versions.txt
+        configuration.*
+        stdout.txt
+        stderr.txt
+        result.md
+    refinement-ledger.md
+    verification-report.md
 ```
 
 Never overwrite evidence from an earlier run. Use a new run directory and record the change that motivated it.
+`delivery-status.md` is not run evidence and is not append-only; the main compiler agent updates its current human summary while preserving links to immutable runs and the refinement ledger.
 
 ## Core workflow
 
@@ -93,6 +98,7 @@ Never overwrite evidence from an earlier run. Use a new run directory and record
 Before formalizing, confirm that the plan corpus is sufficiently complete for the requested scope:
 
 - the source files and plan version are identifiable;
+- the planner-created `delivery-status.md` exists and identifies itself as derived and non-authoritative;
 - normative requirements have stable IDs or can be assigned without changing meaning;
 - the domain vocabulary, affected workflows and components, relevant data ownership, permissions, failures, lifecycle rules, compatibility, and preserved behavior are present;
 - blocking product decisions are resolved or the verification scope explicitly excludes them;
@@ -278,11 +284,32 @@ The verification cycle is complete only when:
 
 Record one scoped status in `verification-report.md`: `Blocked`, `In refinement`, `Agreement reached — bounded`, `Agreement reached — proved`, or `Agreement reached — mixed`. Never use an unqualified claim such as "the product is proven correct."
 
+### 10a. Update the human delivery status
+
+Before yielding control because verification converged, remains in refinement, or is blocked, update `<plan-root>/delivery-status.md` as the main stage orchestrator:
+
+- set the current stage and current status honestly;
+- update the **Formal verification** row without changing the other stage histories;
+- summarize the portfolio used, the most important result, any accepted bounds or gaps, and plan changes since the previous stage update;
+- state the next operator decision or write `None`;
+- link to `verification-report.md`, `03-traceability.md`, `refinement-ledger.md`, and the relevant run directories instead of copying proofs, traces, logs, or matrices;
+- preserve the document's derived, non-authoritative authority statement.
+
+After writing it, rerun the planner validator against the selected root and fix any human-status errors:
+
+```bash
+python3 <planner-skill-root>/scripts/validate_plan.py <repository-root> --plan-root <plan-root>
+```
+
+Then explicitly tell the operator that the human delivery status was updated, give the path, state the verification status, and say whether operator action is required.
+
 ### 11. Offer the implementation handoff
 
-After the convergence gate passes, do not begin implementation automatically. Report the verified scope, unchecked or accepted residual risks, native tool evidence, and the exact plan revision that is aligned with the formal models. Then ask one direct handoff question:
+After the convergence gate passes, do not begin implementation automatically. Report the verified scope, unchecked or accepted residual risks, native tool evidence, the exact plan revision aligned with the formal models, and the path to the updated human delivery status. Then ask one direct handoff question:
 
 **“The approved plan and formal models are aligned for the documented scope. Should I proceed with implementation using the `parallel-plan-implementation` skill?”**
+
+Offer that direct handoff only when `<plan-root>` is the canonical `docs/implementation-plan/` expected by the downstream skill. For a non-default root, first offer normalization through `product-implementation-planner`; do not copy or relocate the verified corpus silently, and do not start parallel implementation until the normalized canonical plan is revalidated.
 
 If convergence is blocked or unresolved, do not offer unrestricted implementation. State which phases, if any, remain safe and which decisions or obligations block the rest.
 
@@ -306,6 +333,7 @@ Use exact claims:
 - An over-constrained model can pass vacuously.
 - Liveness depends critically on fairness and environment assumptions.
 - The formal model must remain smaller and clearer than the implementation plan.
+- The human delivery status is a concise derived view; never use it instead of the plan, traceability matrix, run evidence, refinement ledger, or verification report.
 - Never use `Admitted`, `sorry`, unchecked axioms, or equivalent escape hatches in a final proof without prominently reporting them.
 
 ## Package references
