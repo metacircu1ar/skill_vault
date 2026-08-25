@@ -1,6 +1,6 @@
 # Code Review Loop Formal Verification
 
-This directory contains the TLA+ state machine and reproducible TLC checks for the file-coordinated review protocol.
+This directory contains the TLA+ state machine and reproducible TLC checks for the review protocol coordinated through one fixed shared directory.
 
 ## Files
 
@@ -15,7 +15,7 @@ This directory contains the TLA+ state machine and reproducible TLC checks for t
 
 ## Abstraction and file mapping
 
-The model keeps clean identifiers independent of the skill's `.skill_vault_` filesystem prefix:
+The model treats the captured coordination directory as one abstract file namespace and keeps clean identifiers independent of the skill's `.skill_vault_` filesystem prefix:
 
 | Model field | Skill file |
 | --- | --- |
@@ -30,7 +30,7 @@ The six file-presence fields are initialized independently, so TLC explores all 
 
 Top-level state is factored into six canonical variables: the two actor states plus `files`, `content`, `request`, and `faults` records. Every action specifies the full next state of every top-level variable.
 
-The implementation and both channel bodies are abstracted to Boolean version bits. A finite `feedbackKind` records findings or the exact `NO_FINDINGS` sentinel. Concrete message text and filesystem calls are otherwise abstracted away. The lock and completion marker are presence-only signals and carry no data.
+The implementation and both channel bodies are abstracted to Boolean version bits. A finite `feedbackKind` records findings or the exact `NO_FINDINGS` sentinel. Concrete message text, the coordination-directory path, repository and context paths, path-equality validation, and filesystem calls are otherwise abstracted away. The lock and completion marker are presence-only signals and carry no data.
 
 ## Modeled behavior
 
@@ -51,7 +51,7 @@ The model covers:
 - completion acknowledgement by the participating reviewer and implementor observation of that acknowledgement;
 - successful termination with all six files absent.
 
-The action relation assumes both agents follow the protocol. TLC checks compliant interleavings and explicitly enabled mutations; it does not establish that an LLM will obey the skill.
+The action relation assumes both agents follow the protocol. TLC checks compliant interleavings and explicitly enabled mutations; it does not establish that an LLM will obey the skill, limit protocol polling to the captured directory, or keep review activity static and read-only.
 
 ## Checked properties
 
@@ -111,7 +111,7 @@ TLA2TOOLS_SHA256=expected-digest \
 
 The runner verifies the pinned default jar's SHA-256 digest. A custom jar is verified when `TLA2TOOLS_SHA256` is supplied; otherwise the runner warns. `TLC_METADIR` selects the state directory, and `TLC_COVERAGE=1` enables action coverage.
 
-The recorded 2026-08-25 normal run completed without errors after generating 1,399 states, finding 930 distinct states, and reaching graph depth 22. TLC checked eleven temporal-property branches. All three negative mutation checks produced their expected violations.
+The recorded 2026-08-26 normal run completed without errors after generating 1,399 states, finding 930 distinct states, and reaching graph depth 22. TLC checked eleven temporal-property branches. All three negative mutation checks produced their expected violations.
 
 Coverage confirms both lock-loss locations and retry: `LosePollingLock`, `LoseActiveReviewLock`, and `RetryMissingRequest` are reachable. Both reviewer outcomes and both implementor choices after them are reachable, as are `PublishCompletion`, `AcknowledgeCompletion`, and `ObserveCompletionAcknowledged`. `RemoveCleanupReviewerTmp` and `RemoveCleanupImplementorTmp` remain at `0:0` because compliant publication ordering makes both temp files absent before final cleanup; they remain defensive actions matching the skill's remove-if-present instructions. Arbitrary stale temp cleanup is exercised during startup.
 
@@ -121,7 +121,7 @@ The simplified protocol intentionally delegates lifecycle isolation to external 
 
 Filesystem checks and subsequent writes or removals are separate real calls but single TLA+ actions. The model therefore does not prove compare-and-act atomicity. It does exercise one bounded lock deletion while the reviewer is polling, reviewing, or publishing, and proves that retry preserves the same frozen logical request. Repeated deletions and arbitrary lock loss after a decision are not modeled.
 
-After startup, temp files are reachable only while their compliant publisher is active. Fairness lets `AbortReviewAfterLockLoss` clear a reviewer temp before retry. TLC verifies that the implementor context file exists and remains frozen; it abstracts the required absolute paths, task source or full text, evidence explanation, and implementor notes rather than interpreting their prose. TLC is untimed and does not model the skill's three-poll timeouts for a stuck temp or an unexpected completion marker, an owner crash leaving a permanently orphaned temp, arbitrary findings text, or whether an LLM understands and correctly acts on a message it read.
+After startup, temp files are reachable only while their compliant publisher is active. Fairness lets `AbortReviewAfterLockLoss` clear a reviewer temp before retry. TLC verifies that the implementor context file exists and remains frozen; it abstracts the required absolute paths, task source or full text, evidence explanation, and implementor notes rather than interpreting their prose. It also abstracts the review itself, so it does not prove that the reviewer avoids builds, tests, execution, or writes outside the protocol files, nor that it prioritizes substantive correctness over compilation concerns. TLC is untimed and does not model the skill's three-poll timeouts for a stuck temp or an unexpected completion marker, an owner crash leaving a permanently orphaned temp, arbitrary findings text, or whether an LLM understands and correctly acts on a message it read.
 
 The model assumes the participating reviewer remains live long enough to remove the completion marker. The skill bounds the implementor's wait to three polls and otherwise leaves the marker as a durable pending-shutdown signal; that timeout branch is outside the model.
 

@@ -3,7 +3,8 @@ EXTENDS Naturals, TLC
 
 (***************************************************************************
 WHY
-  The review protocol has two concurrent actors and six file-backed signals.
+  The review protocol has two concurrent actors and six file-backed signals in
+  one fixed abstract coordination namespace.
   TLC explores whether compliant action interleavings preserve snapshot,
   publication, decision, cleanup, and shutdown guarantees.
 
@@ -16,7 +17,8 @@ WHAT
 
   The six top-level variables use records for file, content, request, and
   fault state. Every action specifies each top-level next state, so TLC rejects
-  incomplete successors.
+  incomplete successors. Concrete paths and the reviewer's static-only
+  inspection behavior are outside the state-machine abstraction.
 
 HOW TO RUN
   From this directory:
