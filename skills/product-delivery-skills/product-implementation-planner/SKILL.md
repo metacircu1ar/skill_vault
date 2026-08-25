@@ -2,9 +2,10 @@
 name: product-implementation-planner
 description: Use this skill to create or normalize a product or change description and turn it, plus repository and relevant external-system evidence, into a production-grade architecture and phased implementation plan complete for the approved delivery scope under docs/implementation-plan/. Use for greenfield products, features in existing repositories, modernization or migration, remediation or reliability work, and start-to-finish delivery roadmaps. It clarifies principal decisions, records safe deferrals, assigns stable component and phase IDs, and prepares dependency-aware plans for an optional handoff to the parallel-plan-implementation skill. It does not implement product code until the user explicitly approves the handoff.
 metadata:
-  version: "2.3.0"
-  compatibility: "Requires a filesystem-enabled coding agent that can inspect a repository, write Markdown under docs/, and run Python 3 for structural validation. Optional implementation requires `parallel-plan-implementation`; optional review requires `phase-commit-reviewer`. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; host support and explicit substitution approval are required."
+  version: "2.4.0"
+  compatibility: "Requires a filesystem-enabled coding agent that can inspect a repository, write Markdown under docs/, and run Python 3 for structural validation. Decomposition-aware implementation requires `parallel-plan-implementation` >= 2.4.0; optional review requires `phase-commit-reviewer`. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; host support and explicit substitution approval are required."
   companion-skill: parallel-plan-implementation
+  companion-version: ">=2.4.0"
   reviewer-skill: phase-commit-reviewer
 ---
 
@@ -78,6 +79,7 @@ The planning set must:
 15. **Do not imply implementation has started.** Planning completion and implementation approval are separate events.
 16. **Ground external contracts in evidence.** Mocks, fixtures, generated clients, existing wrappers, and plan-authored schemas are not independent evidence of a provider's behavior. Research material external semantics or record an explicit gap before treating the adapter contract as ready.
 17. **Do not turn impact analysis into scope expansion.** Inspect adjacent behavior to discover dependencies and regressions, but redesign or implement it only when it is inside the approved scope or is a necessary prerequisite recorded with rationale.
+18. **Select decomposition on independent axes.** Infer affected-subsystem architecture, domain and data ownership, change locality, language constraints, and operating needs; do not prescribe OOP, FP, Clean Architecture, GRASP, or another familiar pattern universally.
 
 ## Workflow
 
@@ -178,7 +180,7 @@ Convert safely postponable choices into explicit decision gates instead of block
 
 ### Planning Phase 4 — Design the system architecture
 
-Read `references/architecture-quality-bar.md`.
+Read `references/architecture-quality-bar.md` and `references/decomposition-and-abstraction-selection.md`.
 
 Design all concerns applicable to the approved scope and impact cone. For bounded work, fit the change into the established architecture unless a documented incompatibility requires a scoped architecture change:
 
@@ -202,9 +204,11 @@ Use Mermaid diagrams where they materially improve clarity. Non-trivial products
 
 ### Planning Phase 5 — Decompose the in-scope work into components
 
-Derive components from responsibility, data ownership, deployment, and team boundaries rather than a preset list. For a full product, cover every major component. For bounded work, reuse the repository's established component boundaries where sound and include only affected components plus necessary shared foundations. Assign each in-scope component a stable `CMP-###` ID and a dedicated file under `components/`.
+Choose domain partitioning, dependency topology, state and consistency, code organization, deployment topology, and internal programming model separately. Derive components from invariant and data ownership, change locality, responsibility, deployment, and team boundaries rather than a preset style. For a full product, cover every major component. For bounded work, classify each affected subsystem from repository evidence, reuse compatible local boundaries, and include only affected components plus necessary shared foundations. A newly introduced boundary in an unstructured subsystem remains local to the approved change unless a broader change is explicitly approved. Assign each in-scope component a stable `CMP-###` ID and a dedicated file under `components/`.
 
 For each component define purpose, responsibilities, non-responsibilities, internal architecture, public contracts, dependencies, state ownership, security, reliability, observability, test strategy, rollout, migration, rollback, risks, and decision gates.
+
+Compare the selected decomposition against representative change scenarios as defined in the reference. Record the six axes, per-subsystem classifications, data-writer ownership, candidates, and identical scenario measurements in the canonical decomposition-assessment block in `93-implementation-units.md`. Alternatives required by the reference must differ on named axes; do not create a strawman merely to satisfy the record.
 
 ### Planning Phase 6 — Design well-separated implementation phases
 
@@ -273,7 +277,9 @@ Check that:
 12. no material external adapter is marked ready solely because tests pass against a mock derived from the same assumptions;
 13. every unresolved provider behavior has a named owner and a gate before integration or real writes;
 14. the canonical delivery-scope record agrees with the planning documents, contains every planned phase exactly once, and authorizes only a subset of those phases;
-15. every omitted concern document has a preservation source, and every single-phase bounded component explains its atomicity.
+15. every omitted concern document has a preservation source, and every single-phase bounded component explains its atomicity;
+16. the decomposition assessment is structurally valid, its selected candidate passes every representative scenario, and every required alternative differs on a named axis while using the same scenarios;
+17. each persistent resource has one owner, every additional writer has an explicit coordination mechanism, and declared write paths agree with component and phase ownership.
 
 When Python is available, run:
 
@@ -322,6 +328,7 @@ Planning is complete only when:
 - architecture, data, interfaces, security, deployment, and operations affected by the approved scope are documented or linked to an authoritative preserved baseline;
 - every in-scope component has a detailed phased plan;
 - the phase dependency graph, boundary candidates, write domains, critical path, and parallelization constraints are documented;
+- the selected decomposition, language constraints, affected-subsystem classifications, representative change scenarios, and data-writer registry are documented and validated;
 - testing, migration, rollback, observability, and production readiness are planned;
 - all documents are linked from the index;
 - validation passes without errors;
@@ -335,6 +342,9 @@ Planning is complete only when:
 - producing generic checklists unrelated to the product;
 - ignoring data, identity, infrastructure, operations, or integrations;
 - defaulting to fashionable complexity;
+- treating programming paradigms, dependency architectures, domain partitions, and deployment topologies as one interchangeable style choice;
+- classifying an entire mixed repository with one architecture label or imposing a local change boundary repository-wide;
+- inventing a strawman decomposition alternative or scoring candidates against different change scenarios;
 - postponing security, tests, observability, accessibility, or migration wholesale;
 - using phase numbers without stable IDs or explicit dependencies;
 - expanding a bounded feature, migration, or remediation into an unrequested whole-product redesign;

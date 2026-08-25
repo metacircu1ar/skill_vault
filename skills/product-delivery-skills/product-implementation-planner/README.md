@@ -1,6 +1,6 @@
 # Product Implementation Planner
 
-An Agent Skill that turns a product idea or a change to an existing repository into a production-grade architecture and phased implementation plan complete for the approved scope under `docs/implementation-plan/`. It supports full products, scoped features, modernization or migration, and remediation or reliability work.
+An Agent Skill that turns a product idea or a change to an existing repository into a production-grade architecture and phased implementation plan complete for the approved scope under `docs/implementation-plan/`. It supports full products, scoped features, modernization or migration, and remediation or reliability work, selecting decomposition from domain, repository, language, state, and operational evidence instead of imposing one universal programming or architecture style.
 
 ## Embedded complete-description comment
 
@@ -11,9 +11,9 @@ The source `SKILL.md` begins with a `COMPLETE SKILL DESCRIPTION` HTML comment th
 1. Obtain or normalize the product or change description and record one canonical typed delivery-scope block.
 2. Ask a tailored set of principal architecture questions, including hosting/operating model when unresolved.
 3. Classify unknowns as blocking, decision-gated, or non-blocking.
-4. Establish the impact cone and produce or update the applicable product, architecture, data, interface, security, operations, testing, delivery, and component plans.
-5. Assign stable requirement, decision, component, phase, and boundary identifiers.
-6. Validate dependency types, write domains, shared-state constraints, and candidate parallel waves.
+4. Establish the impact cone, select decomposition independently across domain, dependency, state, organization, deployment, and programming-model axes, and test candidates against representative changes.
+5. Produce or update the applicable product, architecture, data, interface, security, operations, testing, delivery, and component plans with stable identifiers.
+6. Validate subsystem classifications, data writers, dependency types, write domains, shared-state constraints, and candidate parallel waves.
 7. Ask whether implementation should proceed with `parallel-plan-implementation`.
 
 The planner remains planning-only until the user explicitly approves implementation.
@@ -39,4 +39,4 @@ The host controls model availability. Requested and actual profiles are recorded
 python3 <skill-root>/scripts/validate_plan.py <repository-root>
 ```
 
-The validator checks scope-appropriate documents and sections, stable identifiers, component phases, dependency classifications, traceability, decision gates, boundary candidates, write domains, and preliminary parallel waves.
+The validator checks scope-appropriate documents and sections, stable identifiers, decomposition scenarios and alternatives, subsystem classifications, data writers, component phases, dependency classifications, traceability, decision gates, boundary candidates, write domains, and preliminary parallel waves.

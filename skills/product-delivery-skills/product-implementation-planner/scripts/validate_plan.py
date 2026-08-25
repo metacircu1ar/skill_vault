@@ -107,6 +107,7 @@ ROADMAP_HEADINGS = (
 IMPLEMENTATION_UNITS_HEADINGS = (
     "handoff status and authorized phases",
     "stable component and phase catalog",
+    "decomposition decision and change-scenario analysis",
     "candidate execution units",
     "dependency edges",
     "provider-consumer boundary candidates",
@@ -181,6 +182,10 @@ PHASE_RE = re.compile(
     r"^###\s+(PH-(\d{3,})-(\d{2,}))\s+(?:—|-)\s+[^\n]+$",
     re.IGNORECASE | re.MULTILINE,
 )
+EXPECTED_WRITE_PATH_RE = re.compile(
+    r"^ {0,3}[-*+]\s+`([^`\n]+)`(?:\s+.*)?$"
+)
+FENCE_RE = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})")
 REQUIREMENT_ID_RE = re.compile(r"\b(?:FR|NFR|CON)-\d{3,}\b")
 DEFERRED_DECISION_RE = re.compile(r"\bDEC-\d{3,}\b")
 SCOPE_BEGIN = "<!-- delivery-scope:begin -->"
@@ -197,6 +202,61 @@ SCOPE_REQUIRED_KEYS = {
     "applicable_documents",
     "preserved_document_sources",
 }
+DECOMPOSITION_BEGIN = "<!-- decomposition-assessment:begin -->"
+DECOMPOSITION_END = "<!-- decomposition-assessment:end -->"
+DECOMPOSITION_REQUIRED_KEYS = {
+    "schema_version",
+    "context",
+    "decision_kind",
+    "axes",
+    "language_constraints",
+    "affected_subsystems",
+    "data_ownership",
+    "scenarios",
+    "candidates",
+}
+DECOMPOSITION_AXES = {
+    "domain_partitioning",
+    "dependency_topology",
+    "state_and_consistency",
+    "code_organization",
+    "deployment_topology",
+    "internal_programming_model",
+}
+DECOMPOSITION_CONTEXTS = {"existing", "greenfield"}
+DECOMPOSITION_DECISIONS = {"reuse", "local-extension", "boundary-change", "greenfield"}
+SUBSYSTEM_CLASSIFICATIONS = {
+    "coherent-compatible": "existing-subsystem",
+    "defective-but-compatible": "existing-subsystem",
+    "incompatible-with-change": "scoped-migration",
+    "no-discernible-local-architecture": "local-to-change",
+}
+SUBSYSTEM_KEYS = {
+    "name",
+    "classification",
+    "architecture_scope",
+    "evidence",
+    "response",
+    "coexistence",
+    "migration",
+    "rollback",
+}
+DATA_OWNERSHIP_KEYS = {
+    "resource",
+    "owner_component_id",
+    "authorized_writer_component_ids",
+    "write_paths",
+    "coordination",
+}
+SCENARIO_KEYS = {"id", "description"}
+CANDIDATE_KEYS = {"name", "selected", "differs_on_axes", "scenario_impacts"}
+SCENARIO_IMPACT_KEYS = {
+    "scenario_id",
+    "components_crossed",
+    "contracts_crossed",
+    "acceptable",
+    "rationale",
+}
 
 
 @dataclass(frozen=True)
@@ -204,6 +264,7 @@ class ComponentRecord:
     path: Path
     component_id: str
     phase_ids: tuple[str, ...]
+    phase_write_paths: tuple[tuple[str, tuple[str, ...]], ...]
 
 
 def normalize_heading(value: str) -> str:
@@ -254,8 +315,370 @@ def nonempty_string_list(value: Any, label: str, errors: list[str]) -> list[str]
     return value
 
 
+def exact_keys(value: Any, expected: set[str], label: str, errors: list[str]) -> bool:
+    if not isinstance(value, dict):
+        errors.append(f"{label}: expected an object")
+        return False
+    keys = set(value)
+    if keys != expected:
+        errors.append(
+            f"{label}: keys differ; missing={sorted(expected - keys)}, "
+            f"extra={sorted(keys - expected)}"
+        )
+        return False
+    return True
+
+
+def nonempty_string(value: Any, label: str, errors: list[str]) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        errors.append(f"{label}: expected a non-empty string")
+        return False
+    return True
+
+
+def normalize_repository_pattern(pattern: str) -> str:
+    """Return a conservative canonical prefix for path-overlap checks."""
+
+    value = pattern.replace("\\", "/").strip()
+    parts = value.split("/")
+    if ".." in parts:
+        return ""
+    value = "/".join(part for part in parts if part not in ("", "."))
+    wildcard_positions = [
+        position for character in "*?[" if (position := value.find(character)) >= 0
+    ]
+    if wildcard_positions:
+        cut = min(wildcard_positions)
+        if cut > 0 and value[cut - 1] != "/":
+            cut = value.rfind("/", 0, cut) + 1
+        value = value[:cut]
+    return value.rstrip("/")
+
+
+def patterns_may_overlap(first: str, second: str) -> bool:
+    first_prefix = normalize_repository_pattern(first).casefold()
+    second_prefix = normalize_repository_pattern(second).casefold()
+    if not first_prefix or not second_prefix:
+        return True
+    if first_prefix == second_prefix:
+        return True
+    return first_prefix.startswith(second_prefix + "/") or second_prefix.startswith(
+        first_prefix + "/"
+    )
+
+
+def expected_write_paths(markdown: str) -> list[str]:
+    """Extract real Markdown bullets while ignoring fenced and indented code."""
+
+    paths: list[str] = []
+    fence_character: str | None = None
+    fence_length = 0
+    for line in markdown.splitlines():
+        if fence_character is not None:
+            closing_fence = re.fullmatch(
+                rf" {{0,3}}{re.escape(fence_character)}{{{fence_length},}}[ \t]*",
+                line,
+            )
+            if closing_fence:
+                fence_character = None
+                fence_length = 0
+            continue
+        fence = FENCE_RE.match(line)
+        if fence:
+            marker = fence.group("fence")
+            fence_character = marker[0]
+            fence_length = len(marker)
+            continue
+        match = EXPECTED_WRITE_PATH_RE.match(line)
+        if match:
+            paths.append(match.group(1))
+    return paths
+
+
+def validate_repository_pattern(pattern: str, label: str, errors: list[str]) -> None:
+    normalized = pattern.replace("\\", "/").strip()
+    if not normalized:
+        errors.append(f"{label}: path pattern must not be empty")
+    elif normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
+        errors.append(f"{label}: path pattern must be repository-relative: {pattern!r}")
+    elif ".." in normalized.split("/"):
+        errors.append(f"{label}: path pattern escapes the repository: {pattern!r}")
+
+
+def parse_decomposition_assessment(
+    path: Path, text: str, errors: list[str]
+) -> dict[str, Any] | None:
+    starts = text.count(DECOMPOSITION_BEGIN)
+    ends = text.count(DECOMPOSITION_END)
+    if starts == 0 and ends == 0:
+        errors.append(f"{path}: missing canonical decomposition-assessment block")
+        return None
+    if starts != 1 or ends != 1:
+        errors.append(f"{path}: expected exactly one canonical decomposition-assessment block")
+        return None
+    start = text.find(DECOMPOSITION_BEGIN) + len(DECOMPOSITION_BEGIN)
+    end = text.find(DECOMPOSITION_END, start)
+    if end < start:
+        errors.append(f"{path}: decomposition-assessment markers are out of order")
+        return None
+    try:
+        parsed = json.loads(
+            text[start:end].strip(), object_pairs_hook=reject_duplicate_keys
+        )
+    except (json.JSONDecodeError, ValueError) as exc:
+        errors.append(f"{path}: invalid decomposition-assessment JSON: {exc}")
+        return None
+    label = f"{path}: decomposition-assessment"
+    if not exact_keys(parsed, DECOMPOSITION_REQUIRED_KEYS, label, errors):
+        return None
+
+    if parsed.get("schema_version") != 1:
+        errors.append(f"{label}.schema_version must equal 1")
+    context = parsed.get("context")
+    if not isinstance(context, str) or context not in DECOMPOSITION_CONTEXTS:
+        errors.append(f"{label}.context must be one of {sorted(DECOMPOSITION_CONTEXTS)}")
+    decision = parsed.get("decision_kind")
+    if not isinstance(decision, str) or decision not in DECOMPOSITION_DECISIONS:
+        errors.append(
+            f"{label}.decision_kind must be one of {sorted(DECOMPOSITION_DECISIONS)}"
+        )
+    if context == "greenfield" and decision != "greenfield":
+        errors.append(f"{label}: greenfield context requires decision_kind 'greenfield'")
+    if context == "existing" and decision == "greenfield":
+        errors.append(f"{label}: existing context cannot use decision_kind 'greenfield'")
+
+    axes = parsed.get("axes")
+    if exact_keys(axes, DECOMPOSITION_AXES, f"{label}.axes", errors):
+        for key, value in axes.items():
+            nonempty_string(value, f"{label}.axes.{key}", errors)
+    nonempty_string_list(
+        parsed.get("language_constraints"), f"{label}.language_constraints", errors
+    )
+
+    subsystems = parsed.get("affected_subsystems")
+    if not isinstance(subsystems, list):
+        errors.append(f"{label}.affected_subsystems: expected an array")
+        subsystems = []
+    subsystem_names: list[str] = []
+    for index, subsystem in enumerate(subsystems):
+        item_label = f"{label}.affected_subsystems[{index}]"
+        if not exact_keys(subsystem, SUBSYSTEM_KEYS, item_label, errors):
+            continue
+        name = subsystem.get("name")
+        if nonempty_string(name, f"{item_label}.name", errors):
+            subsystem_names.append(name)
+        classification = subsystem.get("classification")
+        expected_scope = (
+            SUBSYSTEM_CLASSIFICATIONS.get(classification)
+            if isinstance(classification, str)
+            else None
+        )
+        if expected_scope is None:
+            errors.append(
+                f"{item_label}.classification must be one of "
+                f"{sorted(SUBSYSTEM_CLASSIFICATIONS)}"
+            )
+        elif subsystem.get("architecture_scope") != expected_scope:
+            errors.append(
+                f"{item_label}.architecture_scope must equal {expected_scope!r} "
+                f"for {classification!r}"
+            )
+        evidence = nonempty_string_list(
+            subsystem.get("evidence"), f"{item_label}.evidence", errors
+        )
+        if not evidence:
+            errors.append(f"{item_label}.evidence must not be empty")
+        nonempty_string(subsystem.get("response"), f"{item_label}.response", errors)
+        for key in ("coexistence", "migration", "rollback"):
+            value = subsystem.get(key)
+            if value is not None and not nonempty_string(value, f"{item_label}.{key}", errors):
+                continue
+            if classification == "incompatible-with-change" and value is None:
+                errors.append(f"{item_label}.{key} must be non-empty for incompatible architecture")
+    if len(subsystem_names) != len(set(subsystem_names)):
+        errors.append(f"{label}.affected_subsystems names must be unique")
+    if context == "existing" and not subsystems:
+        errors.append(f"{label}.affected_subsystems must not be empty for existing context")
+    if context == "greenfield" and subsystems:
+        errors.append(f"{label}.affected_subsystems must be empty for greenfield context")
+
+    ownership = parsed.get("data_ownership")
+    if not isinstance(ownership, list):
+        errors.append(f"{label}.data_ownership: expected an array")
+        ownership = []
+    resources: list[str] = []
+    for index, record in enumerate(ownership):
+        item_label = f"{label}.data_ownership[{index}]"
+        if not exact_keys(record, DATA_OWNERSHIP_KEYS, item_label, errors):
+            continue
+        resource = record.get("resource")
+        if nonempty_string(resource, f"{item_label}.resource", errors):
+            resources.append(resource)
+        owner = record.get("owner_component_id")
+        if not isinstance(owner, str) or not re.fullmatch(r"CMP-\d{3,}", owner):
+            errors.append(f"{item_label}.owner_component_id must match CMP-###")
+        writers = nonempty_string_list(
+            record.get("authorized_writer_component_ids"),
+            f"{item_label}.authorized_writer_component_ids",
+            errors,
+        )
+        if not writers:
+            errors.append(f"{item_label}.authorized_writer_component_ids must not be empty")
+        for writer in writers:
+            if not re.fullmatch(r"CMP-\d{3,}", writer):
+                errors.append(
+                    f"{item_label}.authorized_writer_component_ids contains invalid ID {writer!r}"
+                )
+        if isinstance(owner, str) and owner not in writers:
+            errors.append(f"{item_label}: owner_component_id must be an authorized writer")
+        paths = nonempty_string_list(record.get("write_paths"), f"{item_label}.write_paths", errors)
+        if not paths:
+            errors.append(f"{item_label}.write_paths must not be empty")
+        for path_index, pattern in enumerate(paths):
+            validate_repository_pattern(
+                pattern, f"{item_label}.write_paths[{path_index}]", errors
+            )
+        coordination = record.get("coordination")
+        if coordination is not None:
+            nonempty_string(coordination, f"{item_label}.coordination", errors)
+        if len(writers) > 1 and coordination is None:
+            errors.append(f"{item_label}.coordination is required for multiple writers")
+    if len(resources) != len(set(resources)):
+        errors.append(f"{label}.data_ownership resources must be unique")
+    for left_index, left in enumerate(ownership):
+        if not isinstance(left, dict):
+            continue
+        left_owner = left.get("owner_component_id")
+        left_paths = left.get("write_paths")
+        if not isinstance(left_owner, str) or not isinstance(left_paths, list):
+            continue
+        for right in ownership[left_index + 1 :]:
+            if not isinstance(right, dict):
+                continue
+            right_owner = right.get("owner_component_id")
+            right_paths = right.get("write_paths")
+            if (
+                not isinstance(right_owner, str)
+                or not isinstance(right_paths, list)
+                or left_owner == right_owner
+                or any(not isinstance(path, str) for path in left_paths + right_paths)
+            ):
+                continue
+            if any(
+                patterns_may_overlap(left_path, right_path)
+                for left_path in left_paths
+                for right_path in right_paths
+            ):
+                errors.append(
+                    f"{label}: resources {left.get('resource')!r} and "
+                    f"{right.get('resource')!r} have overlapping write paths but "
+                    "different owners"
+                )
+
+    scenarios = parsed.get("scenarios")
+    if not isinstance(scenarios, list):
+        errors.append(f"{label}.scenarios: expected an array")
+        scenarios = []
+    scenario_ids: list[str] = []
+    for index, scenario in enumerate(scenarios):
+        item_label = f"{label}.scenarios[{index}]"
+        if not exact_keys(scenario, SCENARIO_KEYS, item_label, errors):
+            continue
+        scenario_id = scenario.get("id")
+        if not isinstance(scenario_id, str) or not re.fullmatch(r"SCN-\d{3,}", scenario_id):
+            errors.append(f"{item_label}.id must match SCN-###")
+        else:
+            scenario_ids.append(scenario_id)
+        nonempty_string(scenario.get("description"), f"{item_label}.description", errors)
+    if len(scenario_ids) != len(set(scenario_ids)):
+        errors.append(f"{label}.scenario IDs must be unique")
+    minimum_scenarios = 2 if decision == "reuse" else 4
+    if (
+        isinstance(decision, str)
+        and decision in DECOMPOSITION_DECISIONS
+        and not minimum_scenarios <= len(scenarios) <= 6
+    ):
+        errors.append(
+            f"{label}.scenarios must contain {minimum_scenarios} to 6 entries "
+            f"for decision_kind {decision!r}"
+        )
+
+    candidates = parsed.get("candidates")
+    if not isinstance(candidates, list):
+        errors.append(f"{label}.candidates: expected an array")
+        candidates = []
+    minimum_candidates = 1 if decision == "reuse" else 2
+    if (
+        isinstance(decision, str)
+        and decision in DECOMPOSITION_DECISIONS
+        and len(candidates) < minimum_candidates
+    ):
+        errors.append(
+            f"{label}.candidates must contain at least {minimum_candidates} entries "
+            f"for decision_kind {decision!r}"
+        )
+    candidate_names: list[str] = []
+    selected_count = 0
+    scenario_set = set(scenario_ids)
+    for index, candidate in enumerate(candidates):
+        item_label = f"{label}.candidates[{index}]"
+        if not exact_keys(candidate, CANDIDATE_KEYS, item_label, errors):
+            continue
+        name = candidate.get("name")
+        if nonempty_string(name, f"{item_label}.name", errors):
+            candidate_names.append(name)
+        selected = candidate.get("selected")
+        if not isinstance(selected, bool):
+            errors.append(f"{item_label}.selected must be boolean")
+            selected = False
+        selected_count += int(selected)
+        differs = nonempty_string_list(
+            candidate.get("differs_on_axes"), f"{item_label}.differs_on_axes", errors
+        )
+        unknown_axes = set(differs) - DECOMPOSITION_AXES
+        if unknown_axes:
+            errors.append(f"{item_label}.differs_on_axes has unknown axes {sorted(unknown_axes)}")
+        if not selected and not differs:
+            errors.append(f"{item_label}.differs_on_axes must not be empty for an alternative")
+        impacts = candidate.get("scenario_impacts")
+        if not isinstance(impacts, list):
+            errors.append(f"{item_label}.scenario_impacts: expected an array")
+            continue
+        impact_ids: list[str] = []
+        for impact_index, impact in enumerate(impacts):
+            impact_label = f"{item_label}.scenario_impacts[{impact_index}]"
+            if not exact_keys(impact, SCENARIO_IMPACT_KEYS, impact_label, errors):
+                continue
+            scenario_id = impact.get("scenario_id")
+            if isinstance(scenario_id, str):
+                impact_ids.append(scenario_id)
+            else:
+                errors.append(f"{impact_label}.scenario_id must be a string")
+            for key, minimum in (("components_crossed", 1), ("contracts_crossed", 0)):
+                value = impact.get(key)
+                if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                    errors.append(f"{impact_label}.{key} must be an integer >= {minimum}")
+            acceptable = impact.get("acceptable")
+            if not isinstance(acceptable, bool):
+                errors.append(f"{impact_label}.acceptable must be boolean")
+            elif selected and not acceptable:
+                errors.append(f"{impact_label}: selected candidate must accept every scenario")
+            nonempty_string(impact.get("rationale"), f"{impact_label}.rationale", errors)
+        if len(impact_ids) != len(set(impact_ids)) or set(impact_ids) != scenario_set:
+            errors.append(
+                f"{item_label}.scenario_impacts must cover each scenario exactly once; "
+                f"missing={sorted(scenario_set - set(impact_ids))}, "
+                f"extra={sorted(set(impact_ids) - scenario_set)}"
+            )
+    if len(candidate_names) != len(set(candidate_names)):
+        errors.append(f"{label}.candidate names must be unique")
+    if selected_count != 1:
+        errors.append(f"{label}.candidates must contain exactly one selected candidate")
+    return parsed
+
+
 def parse_delivery_scope(path: Path, text: str, errors: list[str]) -> dict[str, Any] | None:
-    """Parse the one machine-readable scope record, or allow a legacy plan with none."""
+    """Parse the one machine-readable scope record."""
 
     starts = text.count(SCOPE_BEGIN)
     ends = text.count(SCOPE_END)
@@ -384,8 +807,6 @@ def validate_required_file(
     path: Path,
     errors: list[str],
     warnings: list[str],
-    require_scope_heading: bool = True,
-    allow_legacy_release_heading: bool = False,
 ) -> str:
     text = read_text(path, errors)
     if not text:
@@ -397,24 +818,8 @@ def validate_required_file(
     required: tuple[str, ...] | None = None
     if path.name == "README.md":
         required = README_HEADINGS
-        if not require_scope_heading:
-            required = tuple(
-                heading for heading in required if heading != "delivery scope and impact cone"
-            )
     elif path.name == "00-product-description.md":
         required = PRODUCT_DESCRIPTION_HEADINGS
-        available = {name for _, name, _ in heading_entries(text)}
-        if (
-            allow_legacy_release_heading
-            and "first production release scope" in available
-            and "delivery scope and release boundary" not in available
-        ):
-            required = tuple(
-                "first production release scope"
-                if heading == "delivery scope and release boundary"
-                else heading
-                for heading in required
-            )
     elif path.name == "92-delivery-roadmap.md":
         required = ROADMAP_HEADINGS
     elif path.name == "93-implementation-units.md":
@@ -435,6 +840,15 @@ def validate_required_file(
                 warnings.append(f"{path}: contains unresolved marker matching /{pattern.pattern}/")
 
     return text
+
+
+def phase_subsection_body(block: str, heading: str) -> str | None:
+    match = re.search(
+        rf"^####\s+{re.escape(heading)}\s*$\n(?P<body>.*?)(?=^#{{1,4}}\s|\Z)",
+        block,
+        re.IGNORECASE | re.MULTILINE | re.DOTALL,
+    )
+    return match.group("body") if match else None
 
 
 def validate_component(
@@ -471,9 +885,10 @@ def validate_component(
             f"{path}: expected at least {minimum_phase_count} "
             "'### PH-###-## — ...' phase section(s)"
         )
-        return ComponentRecord(path, component_id, tuple())
+        return ComponentRecord(path, component_id, tuple(), tuple())
 
     phase_ids: list[str] = []
+    phase_write_paths: list[tuple[str, tuple[str, ...]]] = []
     boundaries = [match.start() for match in all_phase_matches] + [len(text)]
     for index, match in phase_matches:
         phase_id = match.group(1).upper()
@@ -489,6 +904,23 @@ def validate_component(
         phase_name = match.group(0).strip()
         for heading in missing_heading_names(block, PHASE_SUBHEADINGS):
             errors.append(f"{path}: {phase_name} missing '#### {heading.title()}'")
+
+        write_domain_body = phase_subsection_body(block, "Expected write domains")
+        write_paths = expected_write_paths(write_domain_body) if write_domain_body is not None else []
+        if not write_paths:
+            errors.append(
+                f"{path}: {phase_id} must list at least one backticked repository-relative "
+                "pattern under '#### Expected write domains'"
+            )
+        if len(write_paths) != len(set(write_paths)):
+            errors.append(f"{path}: {phase_id} expected write-domain paths must be unique")
+        for write_index, write_path in enumerate(write_paths):
+            validate_repository_pattern(
+                write_path,
+                f"{path}: {phase_id} expected write domain[{write_index}]",
+                errors,
+            )
+        phase_write_paths.append((phase_id, tuple(write_paths)))
 
         if require_atomicity_rationale and len(phase_matches) == 1:
             atomicity = re.search(
@@ -514,7 +946,12 @@ def validate_component(
         if pattern.search(text):
             warnings.append(f"{path}: contains vague phrase matching /{pattern.pattern}/")
 
-    return ComponentRecord(path, component_id, tuple(phase_ids))
+    return ComponentRecord(
+        path,
+        component_id,
+        tuple(phase_ids),
+        tuple(phase_write_paths),
+    )
 
 
 def main() -> int:
@@ -544,7 +981,6 @@ def main() -> int:
     )
     scope_block_present = SCOPE_BEGIN in product_description or SCOPE_END in product_description
     scope = parse_delivery_scope(product_description_path, product_description, errors)
-    scope_mode_declared = scope_block_present
 
     required_texts: dict[str, str] = {}
     for filename in CORE_REQUIRED_FILES:
@@ -552,21 +988,15 @@ def main() -> int:
         if not path.is_file():
             errors.append(f"missing required file: {path}")
         else:
-            text = validate_required_file(
-                path,
-                errors,
-                warnings,
-                require_scope_heading=scope_mode_declared,
-                allow_legacy_release_heading=not scope_mode_declared,
-            )
+            text = validate_required_file(path, errors, warnings)
             required_texts[filename] = text
 
     if scope is None:
         delivery_scope_mode = "full product"
         if not scope_block_present:
-            warnings.append(
-                "00-product-description.md: missing canonical delivery-scope block; validating as Full product "
-                "— declare a bounded mode if this is a scoped change"
+            errors.append(
+                "00-product-description.md: missing canonical delivery-scope block; "
+                "normalize the legacy plan before validation or implementation handoff"
             )
         applicable_documents = set(FULL_PRODUCT_FILES)
         planned_phase_ids: set[str] | None = None
@@ -651,6 +1081,7 @@ def main() -> int:
         errors.append("component IDs must be unique across component documents")
 
     phase_locations: dict[str, Path] = {}
+    phase_write_domains: dict[str, tuple[str, tuple[str, ...]]] = {}
     for record in records:
         for phase_id in record.phase_ids:
             if phase_id in phase_locations:
@@ -659,10 +1090,70 @@ def main() -> int:
                 )
             else:
                 phase_locations[phase_id] = record.path
+        for phase_id, write_paths in record.phase_write_paths:
+            phase_write_domains[phase_id] = (record.component_id, write_paths)
 
     roadmap_text = required_texts.get("92-delivery-roadmap.md", "")
     handoff_text = required_texts.get("93-implementation-units.md", "")
     readme_text = required_texts.get("README.md", "")
+    decomposition = parse_decomposition_assessment(
+        plan_root / "93-implementation-units.md", handoff_text, errors
+    )
+    if decomposition is not None:
+        known_components = set(component_ids)
+        for index, ownership in enumerate(decomposition.get("data_ownership", [])):
+            if not isinstance(ownership, dict):
+                continue
+            label = f"93-implementation-units.md: data_ownership[{index}]"
+            owner = ownership.get("owner_component_id")
+            writers = ownership.get("authorized_writer_component_ids")
+            if (
+                not isinstance(owner, str)
+                or not re.fullmatch(r"CMP-\d{3,}", owner)
+                or not isinstance(writers, list)
+                or any(
+                    not isinstance(writer, str)
+                    or not re.fullmatch(r"CMP-\d{3,}", writer)
+                    for writer in writers
+                )
+            ):
+                continue
+            unknown = {owner, *writers} - known_components
+            if unknown:
+                errors.append(
+                    f"{label}: component IDs must exist in the in-scope component plans; "
+                    f"unknown={sorted(unknown)}"
+                )
+
+        ownership_records = [
+            record
+            for record in decomposition.get("data_ownership", [])
+            if isinstance(record, dict)
+        ]
+        for phase_id, (component_id, write_paths) in phase_write_domains.items():
+            for ownership in ownership_records:
+                declared_paths = ownership.get("write_paths")
+                writers = ownership.get("authorized_writer_component_ids")
+                if (
+                    not isinstance(declared_paths, list)
+                    or any(not isinstance(path, str) for path in declared_paths)
+                    or not isinstance(writers, list)
+                    or any(not isinstance(writer, str) for writer in writers)
+                ):
+                    continue
+                if not any(
+                    patterns_may_overlap(write_path, declared_path)
+                    for write_path in write_paths
+                    for declared_path in declared_paths
+                ):
+                    continue
+                if component_id not in writers:
+                    errors.append(
+                        f"{phase_locations.get(phase_id, plan_root)}: {phase_id} component "
+                        f"{component_id} has an expected write domain overlapping resource "
+                        f"{ownership.get('resource')!r} but is not an authorized writer; "
+                        f"allowed={sorted(writers)}"
+                    )
 
     for component_id in component_ids:
         if component_id not in roadmap_text:

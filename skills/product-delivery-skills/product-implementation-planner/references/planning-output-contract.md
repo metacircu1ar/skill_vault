@@ -12,6 +12,8 @@ In the top metadata of `00-product-description.md`, record exactly one canonical
 
 Use one of the four lower-case modes: `full product`, `scoped change`, `modernization or migration`, or `remediation or reliability`. Keep the key set exact. `planned_phase_ids` names the phases in this delivery package; `authorized_phase_ids` is the subset approved to start. `applicable_documents` selects from `01`, `02`, `03`, `90`, and `91`; `preserved_document_sources` must cover every omitted concern document with an authoritative source or a concise reason its existing treatment remains valid. Every bounded mode requires at least one explicit `preserved_behavior` statement; the array may be empty only for `full product`. An explicit empty `authorized_phase_ids` array is valid; `non_goals` and `planned_phase_ids` are not empty. The prose sections and planning index explain this record but do not redefine it.
 
+Planning sets that predate the canonical delivery-scope or decomposition-assessment records are not accepted through a legacy validation mode. Normalize them from repository and product evidence before validation, rerun the decomposition scenario comparison, and do not synthesize values, classifications, or scores merely to satisfy validation.
+
 ## Default directory tree
 
 For `Full product`, create this structure and mark all five concern documents applicable. Never omit a relevant concern merely to reduce file count.
@@ -52,6 +54,7 @@ Use stable identifiers consistently:
 - deferred decision: `DEC-001`;
 - component: `CMP-001`, `CMP-002`, or another stable numeric ID;
 - component phase: `PH-001-00`, `PH-002-02`, or another component-qualified stable ID whose first numeric group matches the component;
+- decomposition change scenario: `SCN-001`;
 - dependency edge, when named explicitly: `DEP-001`;
 - material external system: `EXT-001`;
 - external behavior claim: `ECL-EXT-001-001`;
@@ -138,7 +141,7 @@ Required sections:
 
 1. Architecture drivers
 2. System context
-3. Chosen architectural style and rationale
+3. Decomposition and abstraction choices by axis
 4. Major components, stable IDs, and responsibility boundaries
 5. Dependency direction
 6. Critical runtime flows
@@ -151,6 +154,8 @@ Required sections:
 13. Evolution triggers
 
 Include Mermaid system-context and component/deployment diagrams for non-trivial products. Include sequence diagrams when ordering, ownership, or failure behavior would otherwise remain unclear.
+
+When this document is applicable, explain the selected domain partitioning, dependency topology, state and consistency model, code organization, deployment topology, and internal programming model. Link these choices to the canonical decomposition assessment rather than collapsing them into one pattern label.
 
 ## `02-domain-and-data.md`
 
@@ -170,6 +175,8 @@ Required sections:
 12. Data risks and deferred decisions
 
 Do not substitute a raw table list for a domain model.
+
+Data ownership and authorized writers must agree with the canonical decomposition assessment in `93-implementation-units.md`.
 
 ## `03-interfaces-and-integrations.md`
 
@@ -260,7 +267,7 @@ Rules for phase sections:
 - `Dependencies` must cite `PH-###-##`, `CMP-###`, and `DEC-...` IDs rather than vague prose.
 - `Boundary inputs` must identify incoming guarantees, provider phase IDs, dependency type, and the concrete contract kind that could freeze the reliance.
 - `Boundary outputs` must identify the guarantees, interfaces, schemas, symbols, behaviors, or artifacts later units may consume.
-- `Expected write domains` should name likely repository paths when the repository exists; otherwise name artifact classes or future module ownership.
+- `Expected write domains` must list at least one repository-relative path or future path pattern as a Markdown bullet whose first value is backticked, for example ``- `src/accounts/**` ``. Use likely existing paths when the repository exists; for greenfield work, use the planned module or artifact location rather than an unparseable artifact-class label.
 - `Preliminary parallelization` must classify the phase as independent, contract-bound, implementation-bound, or decision-gated, explain why, and identify shared files, schemas, generated artifacts, global configuration, or semantic discovery that requires serialization.
 - A bounded component with one planned phase must include a non-empty `Atomicity rationale`; the validator ignores unrelated historical phases and component plans outside `planned_phase_ids`.
 - Tasks must name the artifact, capability, contract, or operational outcome being created.
@@ -339,17 +346,20 @@ Required sections:
 
 1. Handoff status and authorized phases
 2. Stable component and phase catalog
-3. Candidate execution units
-4. Dependency edges
-5. Provider-consumer boundary candidates
-6. Expected write-domain ownership
-7. Shared artifacts and conflict hotspots
-8. Contract artifacts likely to be materialized
-9. Parallelization candidates
-10. Mandatory serialization constraints
-11. Decision gates and excluded units
-12. Suggested integration order
-13. Handoff validation checklist
+3. Decomposition decision and change-scenario analysis
+4. Candidate execution units
+5. Dependency edges
+6. Provider-consumer boundary candidates
+7. Expected write-domain ownership
+8. Shared artifacts and conflict hotspots
+9. Contract artifacts likely to be materialized
+10. Parallelization candidates
+11. Mandatory serialization constraints
+12. Decision gates and excluded units
+13. Suggested integration order
+14. Handoff validation checklist
+
+Under **Decomposition decision and change-scenario analysis**, include exactly one canonical `decomposition-assessment` JSON block using the markers, keys, enumerations, and conditional requirements in `references/decomposition-and-abstraction-selection.md`. The block is the machine-readable handoff for selected axes, affected-subsystem classifications, data writers, representative scenarios, and candidate measurements. Explain consequential choices and rejected alternatives in prose without redefining the record.
 
 For each candidate execution unit include:
 
@@ -390,6 +400,8 @@ The planning set must make it possible to answer:
 - What guarantee is expected across that dependency?
 - Which repository areas are expected to be touched?
 - Can that dependency be isolated by a stable contract, or must work be serialized?
+- Which decomposition axes were selected, what repository or product evidence supports them, and how did each candidate perform against the same representative changes?
+- Does any implementation unit write a persistent resource outside the data-owner registry or its explicit coordination mechanism?
 - Which decision gates block each unit?
 - What order is safe for integration?
 

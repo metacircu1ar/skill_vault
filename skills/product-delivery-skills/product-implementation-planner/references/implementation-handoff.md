@@ -12,6 +12,7 @@ Offer implementation only after:
 - the planning validator passes without errors;
 - planning status and the canonical `planned_phase_ids` / `authorized_phase_ids` registries are explicit and validated;
 - stable component IDs, phase IDs, dependency edges, boundary candidates, and parallelization constraints exist;
+- the canonical decomposition assessment passes scenario, subsystem-classification, and data-owner validation;
 - blocking decisions are either resolved or exclude all phases being offered.
 
 ## Required implementation question
@@ -35,6 +36,7 @@ Pass the companion skill:
 - repository cleanliness state;
 - planner-validator result;
 - candidate parallel waves and mandatory serialization constraints;
+- the immutable `93-implementation-units.md` decomposition assessment and its data-writer registry;
 - user-specified implementation scope or parallelism limit;
 - requested execution profiles.
 
