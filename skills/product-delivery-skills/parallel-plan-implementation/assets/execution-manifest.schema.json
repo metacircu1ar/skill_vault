@@ -526,6 +526,29 @@
         "limitations",
         "blockers"
       ],
+      "anyOf": [
+        {
+          "properties": {
+            "owned_paths": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "shared_paths": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "generated_paths": {
+              "minItems": 1
+            }
+          }
+        }
+      ],
       "properties": {
         "id": {
           "$ref": "#/$defs/phaseId"

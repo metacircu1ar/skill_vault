@@ -27,6 +27,7 @@ The review stage must not imitate a reduced reviewer when `phase-commit-reviewer
 
 - contract-first boundaries rather than prose-only coordination;
 - one canonical plan scope, schema-v2 execution authority, and unique scope blocks in immutable worker/reviewer packets;
+- one immutable decomposition assessment whose data ownership is checked against actual unit write paths;
 - one worktree and one fresh implementor per eligible phase;
 - dependency-aware waves and explicit shared-path ownership;
 - one reviewable logical integration commit per phase;
@@ -71,4 +72,4 @@ python3 <skill-root>/scripts/validate_parallel_plan.py <repository-root>
 python3 <skill-root>/scripts/validate_parallel_review.py <repository-root>
 ```
 
-The first validator checks boundaries, contracts, waves, ownership, profile records, and phase mappings. The second checks review authorization, reviewer prompts/results, original and rewritten commit maps, finding dispositions, backup/rewrite safety, and final validation evidence.
+The first validator checks boundaries, contracts, waves, decomposition and data ownership, profile records, and phase mappings. The second checks review authorization, reviewer prompts/results, original and rewritten commit maps, finding dispositions, backup/rewrite safety, and final validation evidence.

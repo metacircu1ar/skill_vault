@@ -126,6 +126,8 @@ Specify applicable details:
 - configuration key, type, source, default, validation, secrecy, and reload behavior;
 - persistence object ownership, transaction boundary, migration order, and read/write permissions.
 
+For a persistent resource named in the planning decomposition assessment, cite its resource name, owner component, authorized writer components, and coordination mechanism. Do not grant a unit broader write authority than that immutable planning record.
+
 When the stack is dynamic, signatures still need semantic precision. When the stack is static, include exact declarations or canonical declaration-file paths.
 
 ## Behavioral contract
@@ -264,5 +266,6 @@ A boundary is complete enough for parallel execution only when an isolated worke
 6. What must I deliver for downstream phases?
 7. Which assumptions are forbidden?
 8. What must I report as a blocker instead of guessing?
+9. Does every persistent write agree with the plan's data owner and authorized-writer record?
 
 When any answer is missing and material, keep the boundary `Draft` or reclassify the dependency as implementation-bound.

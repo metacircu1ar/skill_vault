@@ -21,12 +21,15 @@ python3 <planner-skill-root>/scripts/validate_plan.py <repository-root>
 ```
 
 8. Verify that every approved unit has a stable phase ID, prerequisites, boundary inputs, boundary outputs, validation, and exit criteria.
-9. Establish a dedicated integration branch and worktree. Record its baseline commit without assuming a fixed branch name.
-10. Stop before worker launch when Git, worktrees, approved plans, or required repository tooling are unavailable.
+9. Read the canonical decomposition assessment in `93-implementation-units.md` from the planning commit. Verify its selected candidate, per-subsystem classifications, scenario set, and data-writer registry rather than inferring them from mutable worktree prose.
+10. Establish a dedicated integration branch and worktree. Record its baseline commit without assuming a fixed branch name.
+11. Stop before worker launch when Git, worktrees, approved plans, decomposition assessment, or required repository tooling are unavailable.
 
 ### Implementation Phase 1 — Reconstruct and verify the dependency graph
 
 Read every component plan in the approved scope, `92-delivery-roadmap.md`, and the baseline documents needed to understand affected dependencies rather than trusting the roadmap summary alone. Do not add an implementation unit merely because impact analysis found unrelated work outside the approved scope.
+
+Use actual module, package, build, deployment, and path dependencies to test the selected decomposition. When path conflicts or implementation-bound edges are materially worse than the recorded scenario analysis predicted, stop and amend the plan. Do not use boundary generation as permission to substitute a preferred OOP, FP, layered, clean, service, or other architecture.
 
 For every approved component phase, create one implementation unit and verify:
 
@@ -38,6 +41,8 @@ For every approved component phase, create one implementation unit and verify:
 - dependency type for every edge;
 - shared repositories, modules, schemas, generated outputs, migrations, manifests, lockfiles, and infrastructure resources;
 - expected validation and exit criteria.
+
+For every write-capable owned, shared, or generated path, compare the unit's component ID with the decomposition assessment's data-writer registry. Multiple phases of one authorized writer component are valid. A different component may write an overlapping declared resource only when it is named as an authorized writer and the execution waves or shared-path owner registry enforce the recorded migration, serialization, or reconciliation mechanism.
 
 Use these dependency types:
 
@@ -82,6 +87,7 @@ Each phase boundary must specify:
 - module paths, exported symbols, signatures, endpoint operations, event names, schemas, file formats, or command interfaces when applicable;
 - behavioral semantics, including validation, errors, side effects, transactions, consistency, idempotency, ordering, concurrency, timeouts, and compatibility where relevant;
 - data ownership and migration expectations;
+- the applicable declared persistent resource, owner component, authorized writers, and coordination mechanism;
 - cross-component provider and consumer responsibilities;
 - deterministic mocks, fakes, generated clients, fixtures, or contract tests available before provider implementation exists;
 - owned, shared, generated, and forbidden paths;

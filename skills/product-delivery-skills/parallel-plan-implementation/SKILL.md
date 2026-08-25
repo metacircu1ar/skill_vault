@@ -2,9 +2,10 @@
 name: parallel-plan-implementation
 description: Implements an approved, validated product or change plan through contract-first boundaries, evidence-backed external adapters, dependency-aware parallel waves, isolated Git worktrees, specialized implementor agents, ordered phase commits, and an optional parallel phase-commit review. Use for full-product, scoped feature, modernization or migration, and remediation or reliability plans under docs/implementation-plan/, and only after explicit implementation approval. After the approved scope is integrated and the repository is buildable and passing, it separately asks whether fresh reviewer agents should inspect every phase commit; the main agent verifies findings, amends fixes and practical regression tests into the responsible commits, safely replays descendants, and restores a clean passing tip.
 metadata:
-  version: "2.3.0"
-  compatibility: "Requires a filesystem-enabled coding agent, Python 3 validation, Git worktrees, product build/test tooling, and a host that can spawn isolated subagents. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; substitutions need explicit approval. Optional review requires `phase-commit-reviewer` >= 1.3.0."
+  version: "2.4.0"
+  compatibility: "Requires a filesystem-enabled coding agent, Python 3 validation, Git worktrees, product build/test tooling, and a host that can spawn isolated subagents. Decomposition-aware handoff requires `product-implementation-planner` >= 2.4.0. Requested profiles: main `gpt-5.6-sol`/`ultra`, implementors `gpt-5.6-terra`/`xhigh`, reviewers `gpt-5.6-sol`/`xhigh`; substitutions need explicit approval. Optional review requires `phase-commit-reviewer` >= 1.3.0."
   companion-for: "product-implementation-planner"
+  companion-version: ">=2.4.0"
   reviewer-skill: "phase-commit-reviewer"
   reviewer-skill-version: ">=1.3.0"
 ---
@@ -106,6 +107,7 @@ A fix belongs in the earliest responsible phase where the corrected implementati
 27. **Separate internal fakes from provider emulators.** Internal-port fakes may unblock consumers; provider emulators and real adapters require external evidence and later conformance.
 28. **Gate external access.** Public documentation and repository evidence may be read safely; private/live access must be authorized, and read access never implies sandbox, canary, production, quota-consuming, or destructive writes.
 29. **Honor the approved change boundary.** Implement only authorized phases and necessary recorded prerequisites. Whole-repository inspection and regression testing identify impact; they do not authorize adjacent redesign, cleanup, or feature work.
+30. **Preserve decomposition and data ownership.** Boundary materialization may correct execution classifications, but it must not silently replace the selected decomposition or grant a component undeclared write ownership. Contradictory path or dependency evidence requires plan amendment or explicit serialization consistent with the plan.
 
 ## Required inputs
 
@@ -114,6 +116,7 @@ Locate or receive:
 - repository root;
 - planning root, `docs/implementation-plan/`;
 - delivery scope mode, requested outcome, impact cone, preserved behavior, and explicit non-goals;
+- the canonical decomposition assessment, selected candidate, affected-subsystem classifications, and data-writer registry from `93-implementation-units.md`;
 - exact user-approved scope;
 - planning status and authorized `PH-###-##` IDs;
 - unresolved `DEC-###` gates;
@@ -131,7 +134,7 @@ Follow the implementation phases in order.
 Read `references/execution-workflow.md` completely and follow its detailed Phases 0–8 in order. In summary:
 
 0. preflight Git, repository state, tools, plans, requested profiles, baseline build/tests, and a protected integration worktree;
-1. reconstruct the complete dependency DAG for authorized phases and necessary prerequisites, and correct unsafe dependency classifications;
+1. reconstruct the complete dependency DAG for authorized phases and necessary prerequisites, verify it against the selected decomposition and data ownership, and correct unsafe execution classifications without silently redesigning the plan;
 2. create boundary documents, the execution manifest, ledger, dependency graph, integration order, and complete worker prompts;
 3. materialize and validate the smallest implementation-neutral contract baseline, then freeze its commit;
 4. form maximum-safe waves with no decision, implementation, path, migration, generated-output, lockfile, or infrastructure conflict;
@@ -224,6 +227,8 @@ In addition to the conditions above:
 - building a provider emulator from the same unsupported assumptions as the adapter;
 - passing an external-adapter phase solely because mock-based tests are green;
 - absorbing adjacent refactors, legacy cleanup, or unrelated defects into a bounded change because repository-wide analysis exposed them;
+- replacing the plan's decomposition with a familiar framework pattern while generating boundaries;
+- assigning a unit write access to a persistent resource owned by another component without the recorded migration or serialization mechanism;
 - branching every phase from one commit despite implementation-bound dependencies;
 - allowing same-wave agents to edit lockfiles, migrations, generated output, or central registries without one owner;
 - integrating in completion order instead of dependency order;

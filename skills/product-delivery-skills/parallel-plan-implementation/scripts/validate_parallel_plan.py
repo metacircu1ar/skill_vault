@@ -13,6 +13,8 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
+import unicodedata
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
@@ -204,6 +206,8 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 COMPONENT_DOC_ID_RE = re.compile(r"\bComponent\s+ID\s*:\s*(CMP-\d{3,})\b", re.IGNORECASE)
 PLAN_SCOPE_BEGIN = "<!-- delivery-scope:begin -->"
 PLAN_SCOPE_END = "<!-- delivery-scope:end -->"
+DECOMPOSITION_BEGIN = "<!-- decomposition-assessment:begin -->"
+DECOMPOSITION_END = "<!-- decomposition-assessment:end -->"
 PROMPT_SCOPE_BEGIN = "<!-- approved-scope:begin -->"
 PROMPT_SCOPE_END = "<!-- approved-scope:end -->"
 PLAN_SCOPE_KEYS = {
@@ -217,6 +221,24 @@ PLAN_SCOPE_KEYS = {
     "authorized_phase_ids",
     "applicable_documents",
     "preserved_document_sources",
+}
+DECOMPOSITION_KEYS = {
+    "schema_version",
+    "context",
+    "decision_kind",
+    "axes",
+    "language_constraints",
+    "affected_subsystems",
+    "data_ownership",
+    "scenarios",
+    "candidates",
+}
+DATA_OWNERSHIP_KEYS = {
+    "resource",
+    "owner_component_id",
+    "authorized_writer_component_ids",
+    "write_paths",
+    "coordination",
 }
 PROMPT_SCOPE_KEYS = {
     "delivery_scope_mode",
@@ -347,6 +369,7 @@ def parse_json_block(
     required_keys: set[str],
     label: str,
     errors: list[str],
+    record_name: str = "scope",
 ) -> dict[str, Any] | None:
     if text.count(begin) != 1 or text.count(end) != 1:
         errors.append(f"{label}: expected exactly one {begin} ... {end} block")
@@ -354,21 +377,21 @@ def parse_json_block(
     start = text.find(begin) + len(begin)
     finish = text.find(end, start)
     if finish < start:
-        errors.append(f"{label}: scope block markers are out of order")
+        errors.append(f"{label}: {record_name} block markers are out of order")
         return None
     try:
         value = json.loads(
             text[start:finish].strip(), object_pairs_hook=reject_duplicate_keys
         )
     except (json.JSONDecodeError, ValueError) as exc:
-        errors.append(f"{label}: invalid scope JSON: {exc}")
+        errors.append(f"{label}: invalid {record_name} JSON: {exc}")
         return None
     if not isinstance(value, dict):
-        errors.append(f"{label}: scope block must contain one JSON object")
+        errors.append(f"{label}: {record_name} block must contain one JSON object")
         return None
     if set(value) != required_keys:
         errors.append(
-            f"{label}: scope keys differ; missing={sorted(required_keys - set(value))}, "
+            f"{label}: {record_name} keys differ; missing={sorted(required_keys - set(value))}, "
             f"extra={sorted(set(value) - required_keys)}"
         )
         return None
@@ -394,6 +417,234 @@ def validate_prompt_scope(
         errors.append(f"{label}: approved-scope block does not match its immutable source")
 
 
+def validate_plan_data_ownership(
+    decomposition: dict[str, Any] | None, label: str, errors: list[str]
+) -> list[dict[str, Any]]:
+    if decomposition is None:
+        return []
+    if decomposition.get("schema_version") != 1:
+        errors.append(f"{label}: decomposition-assessment.schema_version must equal 1")
+    records = decomposition.get("data_ownership")
+    if not isinstance(records, list):
+        errors.append(f"{label}: decomposition-assessment.data_ownership must be an array")
+        return []
+    valid: list[dict[str, Any]] = []
+    resources: list[str] = []
+    for index, record in enumerate(records):
+        item_label = f"{label}: decomposition-assessment.data_ownership[{index}]"
+        record_error_count = len(errors)
+        if not isinstance(record, dict) or set(record) != DATA_OWNERSHIP_KEYS:
+            keys = set(record) if isinstance(record, dict) else set()
+            errors.append(
+                f"{item_label}: keys differ; missing={sorted(DATA_OWNERSHIP_KEYS - keys)}, "
+                f"extra={sorted(keys - DATA_OWNERSHIP_KEYS)}"
+            )
+            continue
+        resource = record.get("resource")
+        if not isinstance(resource, str) or not resource.strip():
+            errors.append(f"{item_label}.resource must be a non-empty string")
+        else:
+            resources.append(resource)
+        owner = record.get("owner_component_id")
+        if not isinstance(owner, str) or not COMPONENT_ID_RE.fullmatch(owner):
+            errors.append(f"{item_label}.owner_component_id must match CMP-###")
+        writers = string_list(
+            record.get("authorized_writer_component_ids"),
+            f"{item_label}.authorized_writer_component_ids",
+            errors,
+        )
+        if not writers:
+            errors.append(f"{item_label}.authorized_writer_component_ids must not be empty")
+        for writer in writers:
+            if not COMPONENT_ID_RE.fullmatch(writer):
+                errors.append(f"{item_label}: invalid writer component ID {writer!r}")
+        if isinstance(owner, str) and owner not in writers:
+            errors.append(f"{item_label}: owner_component_id must be an authorized writer")
+        paths = string_list(record.get("write_paths"), f"{item_label}.write_paths", errors)
+        if not paths:
+            errors.append(f"{item_label}.write_paths must not be empty")
+        for path_index, pattern in enumerate(paths):
+            validate_path_pattern(pattern, f"{item_label}.write_paths[{path_index}]", errors)
+        coordination = record.get("coordination")
+        if coordination is not None and (
+            not isinstance(coordination, str) or not coordination.strip()
+        ):
+            errors.append(f"{item_label}.coordination must be null or a non-empty string")
+        if len(writers) > 1 and coordination is None:
+            errors.append(f"{item_label}.coordination is required for multiple writers")
+        if len(errors) == record_error_count:
+            valid.append(record)
+    if len(resources) != len(set(resources)):
+        errors.append(f"{label}: decomposition-assessment resources must be unique")
+    for left_index, left in enumerate(valid):
+        for right in valid[left_index + 1 :]:
+            if left.get("owner_component_id") == right.get("owner_component_id"):
+                continue
+            if any(
+                patterns_may_overlap(left_path, right_path)
+                for left_path in usable_string_list(left.get("write_paths"))
+                for right_path in usable_string_list(right.get("write_paths"))
+            ):
+                errors.append(
+                    f"{label}: decomposition resources {left.get('resource')!r} and "
+                    f"{right.get('resource')!r} have overlapping write paths but different owners"
+                )
+    return valid
+
+
+def validate_unit_data_ownership(
+    units: dict[str, dict[str, Any]],
+    ownership_records: list[dict[str, Any]],
+    shared_owners: list[dict[str, Any]],
+    errors: list[str],
+) -> None:
+    for ownership in ownership_records:
+        declared_paths = usable_string_list(ownership.get("write_paths"))
+        authorized_writers = set(
+            usable_string_list(ownership.get("authorized_writer_component_ids"))
+        )
+        matching_units: list[tuple[str, dict[str, Any], list[str]]] = []
+        for phase_id, unit in units.items():
+            component_id = unit.get("component_id")
+            write_capable_paths = (
+                usable_string_list(unit.get("owned_paths"))
+                + usable_string_list(unit.get("shared_paths"))
+                + usable_string_list(unit.get("generated_paths"))
+            )
+            matching_paths = [
+                unit_path
+                for unit_path in write_capable_paths
+                if any(
+                    patterns_may_overlap(unit_path, declared_path)
+                    for declared_path in declared_paths
+                )
+            ]
+            if not matching_paths:
+                continue
+            matching_units.append((phase_id, unit, matching_paths))
+            if component_id not in authorized_writers:
+                errors.append(
+                    f"unit {phase_id}: component {component_id!r} writes declared resource "
+                    f"{ownership.get('resource')!r} but is not an authorized writer; "
+                    f"allowed={sorted(authorized_writers)}"
+                )
+
+        if len(authorized_writers) <= 1:
+            continue
+        for left_index, (left_id, left_unit, left_paths) in enumerate(matching_units):
+            left_component = left_unit.get("component_id")
+            for right_id, right_unit, right_paths in matching_units[left_index + 1 :]:
+                right_component = right_unit.get("component_id")
+                if left_component == right_component or left_unit.get("wave") != right_unit.get(
+                    "wave"
+                ):
+                    continue
+                reconcilers = {
+                    entry.get("owner")
+                    for entry in shared_owners
+                    if isinstance(entry.get("path"), str)
+                    and isinstance(entry.get("owner"), str)
+                    and isinstance(entry.get("strategy"), str)
+                    and bool(entry.get("strategy"))
+                    and any(
+                        registry_pattern_covers(entry["path"], left_path)
+                        for left_path in left_paths
+                    )
+                    and any(
+                        registry_pattern_covers(entry["path"], right_path)
+                        for right_path in right_paths
+                    )
+                }
+                if len(reconcilers) != 1:
+                    errors.append(
+                        f"resource {ownership.get('resource')!r}: authorized writer components "
+                        f"{left_component} ({left_id}) and {right_component} ({right_id}) share "
+                        f"wave {left_unit.get('wave')} without one shared-path reconciliation "
+                        "owner; place them in different waves or register one owner and strategy"
+                    )
+
+
+def validate_same_wave_write_ownership(
+    units: dict[str, dict[str, Any]],
+    shared_owners: list[dict[str, Any]],
+    errors: list[str],
+) -> None:
+    units_by_wave: dict[int, list[str]] = defaultdict(list)
+    for phase_id, unit in units.items():
+        wave = unit.get("wave")
+        if isinstance(wave, int):
+            units_by_wave[wave].append(phase_id)
+    for wave, phase_ids in units_by_wave.items():
+        for left_index, left_id in enumerate(phase_ids):
+            left_paths = usable_string_list(
+                units[left_id].get("owned_paths")
+            ) + usable_string_list(units[left_id].get("generated_paths"))
+            for right_id in phase_ids[left_index + 1 :]:
+                right_paths = usable_string_list(
+                    units[right_id].get("owned_paths")
+                ) + usable_string_list(units[right_id].get("generated_paths"))
+                for left_path in left_paths:
+                    for right_path in right_paths:
+                        if patterns_may_overlap(left_path, right_path):
+                            errors.append(
+                                f"wave {wave}: overlapping exclusive or generated writes are "
+                                "not allowed: "
+                                f"{left_id}:{left_path!r} and {right_id}:{right_path!r}"
+                            )
+
+        for owner_id in phase_ids:
+            owner_paths = usable_string_list(
+                units[owner_id].get("owned_paths")
+            ) + usable_string_list(units[owner_id].get("generated_paths"))
+            for shared_id in phase_ids:
+                if owner_id == shared_id:
+                    continue
+                shared_paths = usable_string_list(units[shared_id].get("shared_paths"))
+                for owner_path in owner_paths:
+                    for shared_path in shared_paths:
+                        if not patterns_may_overlap(owner_path, shared_path):
+                            continue
+                        matching_owners = {
+                            entry.get("owner")
+                            for entry in shared_owners
+                            if isinstance(entry.get("path"), str)
+                            and isinstance(entry.get("owner"), str)
+                            and registry_pattern_covers(entry["path"], owner_path)
+                            and registry_pattern_covers(entry["path"], shared_path)
+                        }
+                        if matching_owners != {owner_id}:
+                            errors.append(
+                                f"wave {wave}: {owner_id} owns {owner_path!r} while {shared_id} "
+                                f"declares overlapping shared path {shared_path!r}, but the registry "
+                                f"does not name {owner_id} as the sole owner"
+                            )
+
+        for left_index, left_id in enumerate(phase_ids):
+            left_shared_paths = usable_string_list(units[left_id].get("shared_paths"))
+            for right_id in phase_ids[left_index + 1 :]:
+                right_shared_paths = usable_string_list(units[right_id].get("shared_paths"))
+                for left_path in left_shared_paths:
+                    for right_path in right_shared_paths:
+                        if not patterns_may_overlap(left_path, right_path):
+                            continue
+                        reconcilers = {
+                            entry.get("owner")
+                            for entry in shared_owners
+                            if isinstance(entry.get("path"), str)
+                            and isinstance(entry.get("owner"), str)
+                            and isinstance(entry.get("strategy"), str)
+                            and bool(entry.get("strategy"))
+                            and registry_pattern_covers(entry["path"], left_path)
+                            and registry_pattern_covers(entry["path"], right_path)
+                        }
+                        if len(reconcilers) != 1:
+                            errors.append(
+                                f"wave {wave}: overlapping shared writes require one common "
+                                f"reconciliation owner: {left_id}:{left_path!r} and "
+                                f"{right_id}:{right_path!r}"
+                            )
+
+
 def commit_exists(repo_root: Path, commit: str) -> bool:
     if not COMMIT_RE.fullmatch(commit):
         return False
@@ -409,7 +660,9 @@ def commit_exists(repo_root: Path, commit: str) -> bool:
 def normalize_git_tree_path(relative_path: str) -> str | None:
     """Normalize a repository-relative Git tree path without rewriting dotfiles or traversal."""
 
-    value = relative_path.replace("\\", "/")
+    if "\\" in relative_path:
+        return None
+    value = relative_path
     while value.startswith("./"):
         value = value.removeprefix("./")
     path = PurePosixPath(value)
@@ -418,11 +671,143 @@ def normalize_git_tree_path(relative_path: str) -> str | None:
         or not path.parts
         or "\x00" in value
         or path.is_absolute()
-        or re.match(r"^[A-Za-z]:/", value)
+        or re.match(r"^[A-Za-z]:", value)
         or ".." in path.parts
     ):
         return None
     return path.as_posix()
+
+
+def validate_immutable_planning_commit(
+    repo_root: Path, planning_commit: str, errors: list[str]
+) -> None:
+    """Run the companion planner validator against planning files from one commit."""
+
+    planner_validator = (
+        Path(__file__).resolve().parents[2]
+        / "product-implementation-planner"
+        / "scripts"
+        / "validate_plan.py"
+    )
+    if not planner_validator.is_file():
+        errors.append(
+            "companion product-implementation-planner validator is unavailable at "
+            f"{planner_validator}"
+        )
+        return
+
+    listing = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "-z",
+            planning_commit,
+            "--",
+            PLAN_RELATIVE_PATH.as_posix(),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if listing.returncode != 0:
+        errors.append(
+            f"cannot enumerate planning files at {planning_commit}: "
+            f"{listing.stderr.decode('utf-8', errors='replace').strip()}"
+        )
+        return
+
+    relative_paths = [
+        path.decode("utf-8", errors="surrogateescape")
+        for path in listing.stdout.split(b"\0")
+        if path
+    ]
+    try:
+        with tempfile.TemporaryDirectory(prefix="parallel-plan-validation-") as temp_dir:
+            snapshot_root = Path(temp_dir)
+            destination_spellings: dict[str, str] = {}
+            for relative_path in relative_paths:
+                normalized = normalize_git_tree_path(relative_path)
+                if normalized is None or not normalized.startswith(
+                    PLAN_RELATIVE_PATH.as_posix() + "/"
+                ):
+                    errors.append(
+                        f"planning commit contains an invalid planning path: {relative_path!r}"
+                    )
+                    return
+                normalized_parts = PurePosixPath(normalized).parts
+                for depth in range(1, len(normalized_parts) + 1):
+                    destination_prefix = "/".join(normalized_parts[:depth])
+                    destination_key = unicodedata.normalize(
+                        "NFC", destination_prefix
+                    ).casefold()
+                    previous_spelling = destination_spellings.get(destination_key)
+                    if (
+                        previous_spelling is not None
+                        and previous_spelling != destination_prefix
+                    ):
+                        errors.append(
+                            "planning commit contains paths that alias in the validation "
+                            f"snapshot: {previous_spelling!r} and {destination_prefix!r}"
+                        )
+                        return
+                    destination_spellings[destination_key] = destination_prefix
+
+                blob = subprocess.run(
+                    ["git", "-C", str(repo_root), "show", f"{planning_commit}:{relative_path}"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                if blob.returncode != 0:
+                    errors.append(
+                        f"cannot read planning file {relative_path!r} at {planning_commit}: "
+                        f"{blob.stderr.decode('utf-8', errors='replace').strip()}"
+                    )
+                    return
+                target = snapshot_root / normalized
+                if target.exists():
+                    errors.append(
+                        "planning commit path aliases an existing validation destination: "
+                        f"{relative_path!r}"
+                    )
+                    return
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(blob.stdout)
+
+            try:
+                validation = subprocess.run(
+                    [sys.executable, str(planner_validator), str(snapshot_root)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                errors.append(
+                    f"companion planner validation timed out for planning commit {planning_commit}"
+                )
+                return
+            if validation.returncode != 0:
+                output = "\n".join(
+                    part.strip()
+                    for part in (validation.stdout, validation.stderr)
+                    if part.strip()
+                )
+                if len(output) > 6000:
+                    output = output[:6000] + "\n... output truncated"
+                errors.append(
+                    f"planning commit {planning_commit} fails companion planner validation:\n"
+                    + "\n".join(f"    {line}" for line in output.splitlines())
+                )
+    except OSError as exc:
+        errors.append(
+            f"cannot materialize planning commit {planning_commit} for validation: {exc}"
+        )
 
 
 def commit_contains_path(repo_root: Path, commit: str, relative_path: str) -> bool:
@@ -501,28 +886,57 @@ def validate_path_pattern(pattern: str, label: str, errors: list[str]) -> None:
     if not pattern.strip():
         errors.append(f"{label}: path pattern must not be empty")
         return
-    normalized = pattern.replace("\\", "/")
-    if normalized.startswith("/") or re.match(r"^[A-Za-z]:/", normalized):
+    normalized = pattern.replace("\\", "/").strip()
+    if normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
         errors.append(f"{label}: path pattern must be repository-relative: {pattern!r}")
         return
-    prefix = normalize_pattern(normalized)
-    if prefix == ".." or prefix.startswith("../") or "/../" in f"/{prefix}/":
+    if ".." in normalized.split("/"):
         errors.append(f"{label}: path pattern escapes the repository: {pattern!r}")
 
 
 def normalize_pattern(pattern: str) -> str:
-    value = pattern.replace("\\", "/").strip()
-    while value.startswith("./"):
-        value = value[2:]
+    value = canonical_path_pattern(pattern)
+    if not value:
+        return ""
     wildcard_positions = [pos for char in "*?[" if (pos := value.find(char)) >= 0]
     if wildcard_positions:
-        value = value[: min(wildcard_positions)]
+        cut = min(wildcard_positions)
+        # A wildcard inside a segment can match multiple concrete segment names.
+        # Retain only complete preceding segments so overlap checks fail closed.
+        if cut > 0 and value[cut - 1] != "/":
+            cut = value.rfind("/", 0, cut) + 1
+        value = value[:cut]
     return value.rstrip("/")
 
 
+def canonical_path_pattern(pattern: str) -> str:
+    value = pattern.replace("\\", "/").strip()
+    parts = value.split("/")
+    if ".." in parts:
+        return ""
+    return "/".join(part for part in parts if part not in ("", ".")).rstrip("/")
+
+
+def registry_pattern_covers(registry_pattern: str, candidate_pattern: str) -> bool:
+    """Prove simple registry coverage without using conservative overlap as authority."""
+
+    registry = canonical_path_pattern(registry_pattern)
+    candidate = canonical_path_pattern(candidate_pattern)
+    if not registry or not candidate:
+        return False
+    if registry == candidate or registry == "**":
+        return True
+    if not registry.endswith("/**"):
+        return False
+    base = registry[:-3].rstrip("/")
+    if any(character in base for character in "*?["):
+        return False
+    return candidate == base or candidate.startswith(base + "/")
+
+
 def patterns_may_overlap(first: str, second: str) -> bool:
-    a = normalize_pattern(first)
-    b = normalize_pattern(second)
+    a = normalize_pattern(first).casefold()
+    b = normalize_pattern(second).casefold()
     if not a or not b:
         return True
     if a == b:
@@ -793,6 +1207,38 @@ def main() -> int:
         if not plan_authorized_ids <= plan_planned_ids:
             errors.append("plan authorized_phase_ids must be a subset of planned_phase_ids")
 
+    implementation_units_path = repo_root / PLAN_RELATIVE_PATH / "93-implementation-units.md"
+    if (
+        isinstance(planning_commit_for_scope, str)
+        and COMMIT_RE.fullmatch(planning_commit_for_scope)
+        and commit_exists(repo_root, planning_commit_for_scope)
+    ):
+        validate_immutable_planning_commit(repo_root, planning_commit_for_scope, errors)
+        implementation_units = git_show_text(
+            repo_root,
+            planning_commit_for_scope,
+            (PLAN_RELATIVE_PATH / "93-implementation-units.md").as_posix(),
+        ) or ""
+        decomposition_label = (
+            f"{planning_commit_for_scope}:"
+            f"{(PLAN_RELATIVE_PATH / '93-implementation-units.md').as_posix()}"
+        )
+    else:
+        implementation_units = read_text(implementation_units_path, errors)
+        decomposition_label = str(implementation_units_path)
+    plan_decomposition = parse_json_block(
+        implementation_units,
+        DECOMPOSITION_BEGIN,
+        DECOMPOSITION_END,
+        DECOMPOSITION_KEYS,
+        decomposition_label,
+        errors,
+        "decomposition-assessment",
+    )
+    plan_data_ownership = validate_plan_data_ownership(
+        plan_decomposition, decomposition_label, errors
+    )
+
     top_level_commands = string_list(
         manifest.get("validation_commands"), "manifest.validation_commands", errors
     )
@@ -983,6 +1429,7 @@ def main() -> int:
             if not isinstance(entry, dict):
                 errors.append(f"{label}: expected an object")
                 continue
+            entry_error_count = len(errors)
             path = entry.get("path")
             owner = entry.get("owner")
             strategy = entry.get("strategy")
@@ -990,7 +1437,7 @@ def main() -> int:
                 errors.append(f"{label}.path must be a non-empty string")
             else:
                 validate_path_pattern(path, f"{label}.path", errors)
-                normalized_path = normalize_pattern(path)
+                normalized_path = canonical_path_pattern(path).casefold()
                 if normalized_path in shared_owner_paths:
                     errors.append(
                         f"{label}.path duplicates shared-path registry entry "
@@ -1002,7 +1449,8 @@ def main() -> int:
                 errors.append(f"{label}.owner must be MAIN or a PH-###-## ID")
             if not isinstance(strategy, str) or not strategy:
                 errors.append(f"{label}.strategy must be a non-empty string")
-            shared_owners.append(entry)
+            if len(errors) == entry_error_count:
+                shared_owners.append(entry)
 
     contracts_raw = manifest.get("contracts", [])
     contracts: dict[str, dict[str, Any]] = {}
@@ -1263,6 +1711,17 @@ def main() -> int:
             ):
                 list_values[key] = string_list(unit.get(key), f"{label}.{key}", errors)
 
+            write_capable_paths = (
+                list_values["owned_paths"]
+                + list_values["shared_paths"]
+                + list_values["generated_paths"]
+            )
+            if not write_capable_paths:
+                errors.append(
+                    f"{label}: at least one of owned_paths, shared_paths, or "
+                    "generated_paths must not be empty"
+                )
+
             for key in (
                 "owned_paths",
                 "read_only_paths",
@@ -1273,28 +1732,41 @@ def main() -> int:
                 for path_index, pattern in enumerate(list_values[key]):
                     validate_path_pattern(pattern, f"{label}.{key}[{path_index}]", errors)
 
+            for path_kind in ("owned_paths", "shared_paths", "generated_paths"):
+                singular_kind = path_kind.removesuffix("_paths").replace("_", "-")
+                for write_path in list_values[path_kind]:
+                    for read_only in list_values["read_only_paths"]:
+                        if patterns_may_overlap(write_path, read_only):
+                            errors.append(
+                                f"{label}: {singular_kind} path {write_path!r} overlaps "
+                                f"read-only path {read_only!r}"
+                            )
+                    for forbidden in list_values["forbidden_paths"]:
+                        if patterns_may_overlap(write_path, forbidden):
+                            errors.append(
+                                f"{label}: {singular_kind} path {write_path!r} overlaps "
+                                f"forbidden path {forbidden!r}"
+                            )
+
             for owned in list_values["owned_paths"]:
-                for read_only in list_values["read_only_paths"]:
-                    if patterns_may_overlap(owned, read_only):
+                for shared in list_values["shared_paths"]:
+                    if patterns_may_overlap(owned, shared):
                         errors.append(
-                            f"{label}: owned path {owned!r} overlaps read-only path {read_only!r}"
+                            f"{label}: owned path {owned!r} overlaps its own shared path "
+                            f"{shared!r}"
                         )
-                for forbidden in list_values["forbidden_paths"]:
-                    if patterns_may_overlap(owned, forbidden):
+                for generated in list_values["generated_paths"]:
+                    if patterns_may_overlap(owned, generated):
                         errors.append(
-                            f"{label}: owned path {owned!r} overlaps forbidden path {forbidden!r}"
-                        )
-            for shared in list_values["shared_paths"]:
-                for forbidden in list_values["forbidden_paths"]:
-                    if patterns_may_overlap(shared, forbidden):
-                        errors.append(
-                            f"{label}: shared path {shared!r} overlaps forbidden path {forbidden!r}"
+                            f"{label}: owned path {owned!r} overlaps its own generated path "
+                            f"{generated!r}"
                         )
             for generated in list_values["generated_paths"]:
-                for forbidden in list_values["forbidden_paths"]:
-                    if patterns_may_overlap(generated, forbidden):
+                for shared in list_values["shared_paths"]:
+                    if patterns_may_overlap(generated, shared):
                         errors.append(
-                            f"{label}: generated path {generated!r} overlaps forbidden path {forbidden!r}"
+                            f"{label}: generated path {generated!r} overlaps its own shared path "
+                            f"{shared!r}"
                         )
 
             if not list_values["validation_commands"]:
@@ -1374,6 +1846,8 @@ def main() -> int:
                 f"extra={sorted((unit_ids | excluded_ids) - plan_planned_ids)}"
             )
 
+    validate_unit_data_ownership(units, plan_data_ownership, shared_owners, errors)
+
     # Validate contract references now that units are known.
     known_phase_ids = unit_ids | excluded_ids
     for index, entry in enumerate(shared_owners):
@@ -1390,7 +1864,7 @@ def main() -> int:
                 entry
                 for entry in shared_owners
                 if isinstance(entry.get("path"), str)
-                and patterns_may_overlap(shared_path, entry["path"])
+                and registry_pattern_covers(entry["path"], shared_path)
             ]
             if not matches:
                 errors.append(
@@ -1404,7 +1878,10 @@ def main() -> int:
                     f"{sorted(str(owner) for owner in owners)}"
                 )
 
-        for owned_path in usable_string_list(unit.get("owned_paths")):
+        exclusive_paths = usable_string_list(unit.get("owned_paths")) + usable_string_list(
+            unit.get("generated_paths")
+        )
+        for owned_path in exclusive_paths:
             for entry in shared_owners:
                 registry_path = entry.get("path")
                 registry_owner = entry.get("owner")
@@ -1414,7 +1891,8 @@ def main() -> int:
                     and registry_owner != phase_id
                 ):
                     errors.append(
-                        f"unit {phase_id}: owned path {owned_path!r} overlaps shared registry path "
+                        f"unit {phase_id}: exclusive or generated path {owned_path!r} overlaps "
+                        "shared registry path "
                         f"{registry_path!r} owned by {registry_owner}; list it as shared or assign "
                         "this unit as the reconciliation owner"
                     )
@@ -1723,48 +2201,7 @@ def main() -> int:
                     f"predecessor {provider} commit {provider_integration}"
                 )
 
-    # Same-wave write ownership.
-    units_by_wave: dict[int, list[str]] = defaultdict(list)
-    for phase_id, unit in units.items():
-        wave = unit.get("wave")
-        if isinstance(wave, int):
-            units_by_wave[wave].append(phase_id)
-    for wave, phase_ids in units_by_wave.items():
-        for left_index, left_id in enumerate(phase_ids):
-            left_paths = units[left_id].get("owned_paths", [])
-            for right_id in phase_ids[left_index + 1 :]:
-                right_paths = units[right_id].get("owned_paths", [])
-                for left_path in left_paths:
-                    for right_path in right_paths:
-                        if patterns_may_overlap(left_path, right_path):
-                            errors.append(
-                                f"wave {wave}: overlapping write ownership is not allowed: "
-                                f"{left_id}:{left_path!r} and {right_id}:{right_path!r}"
-                            )
-
-        for owner_id in phase_ids:
-            owner_paths = usable_string_list(units[owner_id].get("owned_paths"))
-            for shared_id in phase_ids:
-                if owner_id == shared_id:
-                    continue
-                shared_paths = usable_string_list(units[shared_id].get("shared_paths"))
-                for owner_path in owner_paths:
-                    for shared_path in shared_paths:
-                        if not patterns_may_overlap(owner_path, shared_path):
-                            continue
-                        matching_owners = {
-                            entry.get("owner")
-                            for entry in shared_owners
-                            if isinstance(entry.get("path"), str)
-                            and patterns_may_overlap(owner_path, entry["path"])
-                            and patterns_may_overlap(shared_path, entry["path"])
-                        }
-                        if matching_owners != {owner_id}:
-                            errors.append(
-                                f"wave {wave}: {owner_id} owns {owner_path!r} while {shared_id} "
-                                f"declares overlapping shared path {shared_path!r}, but the registry "
-                                f"does not name {owner_id} as the sole owner"
-                            )
+    validate_same_wave_write_ownership(units, shared_owners, errors)
 
     # Boundary count and mapping: one boundary per included component plan.
     boundary_dir = parallel_root / "boundaries"
