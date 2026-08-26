@@ -11,12 +11,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-REVIEW_LOCK = ".skill_vault_review_lock"
-IMPLEMENTOR_FINAL = ".skill_vault_implementor_to_reviewer.txt"
-REVIEWER_FINAL = ".skill_vault_reviewer_to_implementor.txt"
-ROUND_COMPLETE = ".skill_vault_review_round_complete"
-IMPLEMENTOR_TEMP = ".skill_vault_implementor_to_reviewer.tmp"
-REVIEWER_TEMP = ".skill_vault_reviewer_to_implementor.tmp"
+REVIEW_LOCK = ".hive_skills_review_lock"
+IMPLEMENTOR_FINAL = ".hive_skills_implementor_to_reviewer.txt"
+REVIEWER_FINAL = ".hive_skills_reviewer_to_implementor.txt"
+ROUND_COMPLETE = ".hive_skills_review_round_complete"
+IMPLEMENTOR_TEMP = ".hive_skills_implementor_to_reviewer.tmp"
+REVIEWER_TEMP = ".hive_skills_reviewer_to_implementor.tmp"
 
 PROTOCOL_FILES = (
     REVIEW_LOCK,

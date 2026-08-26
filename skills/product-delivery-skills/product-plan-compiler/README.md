@@ -473,13 +473,13 @@ scripts/
   run_tla_example.sh
 ```
 
-## Installation path in Skill Vault
+## Installation path in hive_skills
 
 ```text
 skills/product-delivery-skills/product-plan-compiler/
 ```
 
-A repository-ready archive in this delivery also contains the updated top-level `README.md`, so it can be unpacked at the root of `skill_vault`.
+A repository-ready archive in this delivery also contains the updated top-level `README.md`, so it can be unpacked at the root of `hive_skills`.
 
 ## References
 

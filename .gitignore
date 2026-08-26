@@ -19,7 +19,7 @@ venv/
 # Agent and local workspace state
 .claude/
 .codex/
-.skill_vault_*
+.hive_skills_*
 
 # Local scratch output
 tmp/

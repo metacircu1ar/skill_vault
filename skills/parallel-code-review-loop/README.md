@@ -26,7 +26,7 @@ Here `N = 3`. The orchestrator creates one dedicated pair for each repository. A
 | `billing` | `pair_002_implementor` | `pair_002_reviewer` | `/workspace/billing-repo` |
 | `notifications` | `pair_003_implementor` | `pair_003_reviewer` | `/workspace/notifications-repo` |
 
-Each pair is independent. Its repository root is also its `code-review-loop` coordination directory, so temporary `.skill_vault_*` protocol files appear only in that repository. They are removed after clean completion.
+Each pair is independent. Its repository root is also its `code-review-loop` coordination directory, so temporary `.hive_skills_*` protocol files appear only in that repository. They are removed after clean completion.
 
 With six confirmed worker slots available in addition to the orchestrator, all three pairs can run concurrently. With only four, the orchestrator runs at most two complete pairs at once and queues the remaining pair. It never starts implementors without reserving capacity for their reviewers. If it cannot confirm at least two slots, live progress-message delivery, monitoring, and cancellation, preflight stops without launching a pair.
 

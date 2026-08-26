@@ -57,12 +57,12 @@ The launch order is the external caller's responsibility. Stopping old roles bef
 
 At invocation, resolve the current working directory to an absolute path and keep it as the fixed **coordination directory** for the entire loop. All six working state files live directly in that directory:
 
-- `.skill_vault_review_lock` — empty marker: a completed implementation snapshot is waiting for review.
-- `.skill_vault_implementor_to_reviewer.txt` — implementor-authored review context. Its first publication is mandatory and contains the complete context handoff; later requests retain or atomically replace it with a complete current message.
-- `.skill_vault_reviewer_to_implementor.txt` — reviewer-authored findings or the exact `NO_FINDINGS` signal.
-- `.skill_vault_review_round_complete` — empty marker: the declared completion authority has closed the whole review session through the implementor CLI and requests reviewer shutdown acknowledgement.
-- `.skill_vault_implementor_to_reviewer.tmp` — temporary output for atomic implementor-channel publication.
-- `.skill_vault_reviewer_to_implementor.tmp` — temporary output for atomic reviewer-channel publication.
+- `.hive_skills_review_lock` — empty marker: a completed implementation snapshot is waiting for review.
+- `.hive_skills_implementor_to_reviewer.txt` — implementor-authored review context. Its first publication is mandatory and contains the complete context handoff; later requests retain or atomically replace it with a complete current message.
+- `.hive_skills_reviewer_to_implementor.txt` — reviewer-authored findings or the exact `NO_FINDINGS` signal.
+- `.hive_skills_review_round_complete` — empty marker: the declared completion authority has closed the whole review session through the implementor CLI and requests reviewer shutdown acknowledgement.
+- `.hive_skills_implementor_to_reviewer.tmp` — temporary output for atomic implementor-channel publication.
+- `.hive_skills_reviewer_to_implementor.tmp` — temporary output for atomic reviewer-channel publication.
 
 The coordination directory is not implicitly the repository root. It may be the repository root, a parent such as `/x` for a repository at `/x/repo1`, or an unrelated shared directory. Repository and context paths are supplied separately in the implementor message. Even if an agent changes its shell working directory to inspect the repository, every protocol-script invocation and channel publication must continue using the captured absolute coordination directory. Never search for, poll, or create protocol files in the repository, its parents, its children, or any context directory.
 
@@ -165,8 +165,8 @@ Publish atomically:
    python3 "<skill-dir>/scripts/implementor_loop.py" prepare-context --coordination-dir "<coordination-dir>"
    ~~~
 
-2. Write the complete context handoff to `.skill_vault_implementor_to_reviewer.tmp`.
-3. Atomically rename the temp to `.skill_vault_implementor_to_reviewer.txt`.
+2. Write the complete context handoff to `.hive_skills_implementor_to_reviewer.tmp`.
+3. Atomically rename the temp to `.hive_skills_implementor_to_reviewer.txt`.
 4. Verify that the temp is absent and the final is complete.
 
 ### Maintain context on later requests
@@ -182,7 +182,7 @@ Before creating the lock, confirm that:
 - the reviewer final is absent because any previous response was consumed;
 - the implementation and mandatory implementor final are complete and current.
 
-Create `.skill_vault_review_lock` as an empty file and verify that it exists and is empty. The lock is a marker, not a message channel. Freeze the implementation and implementor channel until the reviewer decides.
+Create `.hive_skills_review_lock` as an empty file and verify that it exists and is empty. The lock is a marker, not a message channel. Freeze the implementation and implementor channel until the reviewer decides.
 
 ## Wait for review
 
@@ -314,9 +314,9 @@ Every accepted request produces exactly one response. With findings, use the com
 
 1. Re-check that the lock exists. If not, return to `wait-for-request --participated` without publishing.
 2. Ensure `prepare-response` completed and the reviewer temp and final are absent.
-3. Write the entire response to `.skill_vault_reviewer_to_implementor.tmp`.
+3. Write the entire response to `.hive_skills_reviewer_to_implementor.tmp`.
 4. Re-check that the lock exists. If it disappeared, run `python3 "<skill-dir>/scripts/reviewer_loop.py" abort-response --coordination-dir "<coordination-dir>"`, then return to `wait-for-request --participated`. The abort command removes only the unpublished reviewer temp and remains safe if the implementor has already recreated the lock for the same frozen request.
-5. Atomically rename the temp to `.skill_vault_reviewer_to_implementor.txt`.
+5. Atomically rename the temp to `.hive_skills_reviewer_to_implementor.txt`.
 6. Verify that the temp is absent and the final is complete.
 7. Run `python3 "<skill-dir>/scripts/reviewer_loop.py" release-review --coordination-dir "<coordination-dir>"`. This requires the complete final and removes the lock if it is still present. It does not re-inspect the implementor-owned final after unlocking, because the implementor may consume that file immediately.
 8. Do not change the final afterward; the implementor removes it after consumption.
@@ -389,7 +389,7 @@ if the completion authority decides the session is complete after NO_FINDINGS:
 
 # Formal verification
 
-This protocol is modeled in the checked [TLA+ source](verification/CodeReviewLoop.tla). The model uses clean abstract file names without the skill's `.skill_vault_` prefix.
+This protocol is modeled in the checked [TLA+ source](verification/CodeReviewLoop.tla). The model uses clean abstract file names without the skill's `.hive_skills_` prefix.
 
 The model covers arbitrary stale-file startup cleanup, delayed external reviewer launch, mandatory implementor context on every request with a required initial publication and later reuse or atomic refresh, incoming-message read gates, snapshot freezing, findings-or-`NO_FINDINGS` publication before unlock, bounded lock loss and same-snapshot retry, another planned phase after `NO_FINDINGS`, final cleanup and completion publication through the implementor CLI, reviewer acknowledgement, and clean termination. The caller-versus-implementor decision authority is a control-plane choice outside the file-state model; both choices use the same verified completion transition. TLC verifies the common file transition after an authorized close decision, not authority selection, caller handback, or the promise that an implementor will not close a caller-owned session.
 

@@ -17,7 +17,7 @@ The skill package's [implementor CLI](../scripts/implementor_loop.py) and [revie
 
 ## Abstraction and file mapping
 
-The model treats the captured coordination directory as one abstract file namespace and keeps clean identifiers independent of the skill's `.skill_vault_` filesystem prefix:
+The model treats the captured coordination directory as one abstract file namespace and keeps clean identifiers independent of the skill's `.hive_skills_` filesystem prefix:
 
 | Model field | Skill file |
 | --- | --- |

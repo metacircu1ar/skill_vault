@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="logo.png" alt="Skill Vault logo" width="180">
+  <img src="logo.png" alt="hive_skills logo" width="180">
 </p>
 
-# Skill Vault
+# hive_skills
 
 A personal collection of agent skills, workflow references, multi-agent coordination protocols, delivery playbooks, and focused audit checklists for AI coding agents.
 
@@ -26,7 +26,7 @@ The standalone Markdown files directly under [`skills/`](skills/) capture reusab
 
 ### Agent coordination skills
 
-The vault contains both lightweight file-protocol coordination skills and
+The repository contains both lightweight file-protocol coordination skills and
 Hive-backed skills that use named registry implementors, parallel reviewer
 panels, durable workflow artifacts, and bounded multi-repository execution.
 
