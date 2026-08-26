@@ -1,8 +1,8 @@
-<p align="center">
-  <img src="logo.png" alt="hive_skills logo" width="180">
-</p>
+<div align="center">
+  <img src="logo.png" alt="hive_skills logo" width="480">
+</div>
 
-# hive_skills
+<h1 align="center">hive_skills</h1>
 
 A personal collection of agent skills, workflow references, multi-agent coordination protocols, delivery playbooks, and focused audit checklists for AI coding agents.
 
