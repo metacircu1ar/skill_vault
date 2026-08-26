@@ -26,13 +26,14 @@ The standalone Markdown files directly under [`skills/`](skills/) capture reusab
 
 ### Agent coordination skills
 
-[`skills/code-review-loop/`](skills/code-review-loop/) contains a shared two-role skill for running an iterative implementation and code-review handshake between two agents working in the same repository.
+The vault contains agent-coordination skills for one iterative implementation/review pair and for scheduling multiple isolated pairs.
 
 | Skill | Purpose |
 | --- | --- |
 | [`code-review-loop`](skills/code-review-loop/SKILL.md) | Coordinate an `implementor` and persistent `reviewer` through session-isolated frozen-diff cycles, `NO_FINDINGS` work-item boundaries, and caller- or implementor-controlled session completion; the protocol includes [TLA+ state-machine verification](skills/code-review-loop/verification/README.md). |
+| [`parallel-code-review-loop`](skills/parallel-code-review-loop/SKILL.md) | Schedule multiple independent `code-review-loop` pairs across distinct repository working paths, pass shared and assignment-specific context to implementors, enforce per-pair startup order, and wait for all pairs to terminate. See the [one-workspace, N-repository example](skills/parallel-code-review-loop/README.md). |
 
-Invoke the same skill on both agents with the appropriate role:
+For one pair, invoke `code-review-loop` on both agents with the appropriate role:
 
 ```text
 /code-review-loop implementor
@@ -40,6 +41,8 @@ Invoke the same skill on both agents with the appropriate role:
 ```
 
 Omitting completion authority defaults both roles to `completion-authority=implementor`. Use `completion-authority=caller` explicitly on both invocations when an enclosing workflow, such as an epic implementor, must keep the reviewer alive across multiple work items and close the session itself. Continue such a session by resuming the same initialized implementor role; a fresh implementor invocation would perform startup cleanup and must begin a new session instead.
+
+For multiple independent repositories, invoke `parallel-code-review-loop` on one orchestrator with its input manifest. The orchestrator validates disjoint repository roots and complete-pair capacity, then launches one `code-review-loop` implementor/reviewer pair per repository. Install the complete directories for both coordination skills because the parallel wrapper depends on the base protocol and its scripts.
 
 ### Git history skills
 
@@ -88,10 +91,11 @@ Clone the repository and copy the skill or reference you need into the directory
 
 ```text
 skills/<standalone-workflow>-skill.md
-skills/code-review-loop/SKILL.md
-skills/verified-commit-split/SKILL.md
-skills/product-delivery-skills/<skill-name>/SKILL.md
-skills/audit/<skill-name>/SKILL.md
+skills/code-review-loop/
+skills/parallel-code-review-loop/
+skills/verified-commit-split/
+skills/product-delivery-skills/<skill-name>/
+skills/audit/<skill-name>/
 ```
 
 ## Repository layout
@@ -100,6 +104,7 @@ skills/audit/<skill-name>/SKILL.md
 skills/*-skill.md               Standalone workflow skills and references
 skills/code-review-loop/         Two-agent implementation/review coordination skill
 skills/code-review-loop/verification/  TLA+ model, checks, and reproducibility notes
+skills/parallel-code-review-loop/  Multi-repository orchestration over isolated review pairs
 skills/verified-commit-split/    Content-preserving Git commit-splitting skill
 skills/audit/                    Focused audit skills
 skills/product-delivery-skills/  Self-contained product-delivery skills
