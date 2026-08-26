@@ -12,13 +12,18 @@ WHAT
   This module models arbitrary stale-file startup cleanup, an externally
   launched passive reviewer, mandatory implementor context on every request,
   reviewer findings or NO_FINDINGS, atomic channel publication, another
-  planned implementation phase, implementor-owned shutdown, and one
-  budgeted lock loss.
+  planned implementation phase, shutdown through the implementor protocol
+  endpoint, and one budgeted lock loss. Whether the implementor or its caller
+  owns the shutdown decision is control policy outside this file-state model.
 
   The six top-level variables use records for file, content, request, and
   fault state. Every action specifies each top-level next state, so TLC rejects
   incomplete successors. Concrete paths and the reviewer's static-only
-  inspection behavior are outside the state-machine abstraction.
+  inspection behavior are outside the state-machine abstraction. The Python
+  role scripts implement waits as silent one-second polls. A poll that only
+  observes unchanged state is a stuttering step and is not represented
+  separately; missing-lock recovery maps to RetryMissingRequest, and a ready
+  result enables the corresponding actor transition.
 
 HOW TO RUN
   From this directory:
@@ -227,9 +232,13 @@ StartReviewer ==
         faults
         >>
 
-FinishInitialImplementation ==
+FinishImplementationPhase ==
     /\ impl = "editing"
-    /\ AllFilesAbsent
+    /\ ~files.reviewLock
+    /\ ~files.reviewerToImplementorTmp
+    /\ ~files.reviewerToImplementorTxt
+    /\ ~files.implementorToReviewerTmp
+    /\ ~files.roundComplete
     /\ impl' = "readyToMessage"
     /\ \E newCode \in BOOLEAN:
         content' = [content EXCEPT !.code = newCode]
@@ -347,7 +356,9 @@ AcknowledgeReviewerMessage ==
     /\ ~files.roundComplete
     /\ ~files.reviewerToImplementorTmp
     /\ files.reviewerToImplementorTxt
-    /\ impl' = "ready"
+    /\ impl' = IF request.feedbackKind = "noFindings"
+        THEN "editing"
+        ELSE "readyToMessage"
     /\ files' = [files EXCEPT !.reviewerToImplementorTxt = FALSE]
     /\ request' = [
         request EXCEPT
@@ -584,7 +595,7 @@ ApplyReviewerFeedback ==
     /\ ~files.reviewLock
     /\ files.reviewerToImplementorTxt
     /\ request.feedbackKind = "findings"
-    /\ impl' = "readyToMessage"
+    /\ impl' = "acknowledging"
     /\ \E newCode \in BOOLEAN:
         content' = [content EXCEPT !.code = newCode]
     /\ UNCHANGED <<
@@ -601,12 +612,11 @@ ContinueAfterNoFindings ==
     /\ ~files.reviewLock
     /\ files.reviewerToImplementorTxt
     /\ request.feedbackKind = "noFindings"
-    /\ impl' = "readyToMessage"
-    /\ \E newCode \in BOOLEAN:
-        content' = [content EXCEPT !.code = newCode]
+    /\ impl' = "acknowledging"
     /\ UNCHANGED <<
         reviewer,
         files,
+        content,
         request,
         faults
         >>
@@ -634,21 +644,6 @@ RemoveCleanupReviewerTmp ==
     /\ files.reviewerToImplementorTmp
     /\ files' = [
         files EXCEPT !.reviewerToImplementorTmp = FALSE
-        ]
-    /\ UNCHANGED <<
-        impl,
-        reviewer,
-        content,
-        request,
-        faults
-        >>
-
-RemoveCleanupReviewerTxt ==
-    /\ impl = "cleaning"
-    /\ ~files.roundComplete
-    /\ files.reviewerToImplementorTxt
-    /\ files' = [
-        files EXCEPT !.reviewerToImplementorTxt = FALSE
         ]
     /\ UNCHANGED <<
         impl,
@@ -688,15 +683,25 @@ RemoveCleanupImplementorTxt ==
         faults
         >>
 
+\* The concrete CLI empties the retained reviewer final and atomically renames
+\* that same entry to the completion marker. This action models that promotion.
 PublishCompletion ==
     /\ impl = "cleaning"
     /\ ~files.roundComplete
-    /\ FilesExceptCompletionAbsent
+    /\ ~files.reviewLock
+    /\ ~files.reviewerToImplementorTmp
+    /\ files.reviewerToImplementorTxt
+    /\ ~files.implementorToReviewerTmp
+    /\ ~files.implementorToReviewerTxt
     /\ request.active
     /\ request.decisionCount = 1
     /\ request.feedbackKind = "noFindings"
     /\ impl' = "awaitingShutdownAck"
-    /\ files' = [files EXCEPT !.roundComplete = TRUE]
+    /\ files' = [
+        files EXCEPT
+            !.reviewerToImplementorTxt = FALSE,
+            !.roundComplete = TRUE
+        ]
     /\ request' = [
         request EXCEPT
             !.active = FALSE,
@@ -768,7 +773,7 @@ Next ==
     \/ StartupCleanupStep
     \/ FinishStartupCleanup
     \/ StartReviewer
-    \/ FinishInitialImplementation
+    \/ FinishImplementationPhase
     \/ ClearImplementorMessage
     \/ ReuseImplementorMessage
     \/ StartImplementorMessage
@@ -792,7 +797,6 @@ Next ==
     \/ ContinueAfterNoFindings
     \/ BeginCompletionCleanup
     \/ RemoveCleanupReviewerTmp
-    \/ RemoveCleanupReviewerTxt
     \/ RemoveCleanupImplementorTmp
     \/ RemoveCleanupImplementorTxt
     \/ PublishCompletion
@@ -805,7 +809,7 @@ Fairness ==
     /\ WF_vars(StartupCleanupStep)
     /\ WF_vars(FinishStartupCleanup)
     /\ WF_vars(StartReviewer)
-    /\ WF_vars(FinishInitialImplementation)
+    /\ WF_vars(FinishImplementationPhase)
     /\ WF_vars(ClearImplementorMessage)
     /\ WF_vars(ReuseImplementorMessage)
     /\ WF_vars(StartImplementorMessage)
@@ -825,7 +829,6 @@ Fairness ==
     /\ WF_vars(ContinueAfterNoFindings)
     /\ WF_vars(BeginCompletionCleanup)
     /\ WF_vars(RemoveCleanupReviewerTmp)
-    /\ WF_vars(RemoveCleanupReviewerTxt)
     /\ WF_vars(RemoveCleanupImplementorTmp)
     /\ WF_vars(RemoveCleanupImplementorTxt)
     /\ WF_vars(PublishCompletion)
@@ -1000,7 +1003,12 @@ SuccessfulTerminationIsClean ==
 
 CompletionMarkerPublishedLast ==
     [][~files.roundComplete /\ files.roundComplete' =>
-        /\ FilesExceptCompletionAbsent
+        /\ ~files.reviewLock
+        /\ ~files.reviewerToImplementorTmp
+        /\ files.reviewerToImplementorTxt
+        /\ ~files.implementorToReviewerTmp
+        /\ ~files.implementorToReviewerTxt
+        /\ FilesExceptCompletionAbsent'
         /\ impl = "cleaning"
         /\ impl' = "awaitingShutdownAck"
         /\ request.feedbackKind = "noFindings"]_vars

@@ -2,6 +2,8 @@
 
 This directory contains the TLA+ state machine and reproducible TLC checks for the review protocol coordinated through one fixed shared directory.
 
+The skill package's [implementor CLI](../scripts/implementor_loop.py) and [reviewer CLI](../scripts/reviewer_loop.py) are the concrete wait and cleanup implementation. Their blocking wait commands inspect protocol state once per second and remain silent until an actionable state or protocol error occurs.
+
 ## Files
 
 - `CodeReviewLoop.tla` — state machine, safety invariants, fairness assumptions, and liveness properties.
@@ -30,7 +32,7 @@ The six file-presence fields are initialized independently, so TLC explores all 
 
 Top-level state is factored into six canonical variables: the two actor states plus `files`, `content`, `request`, and `faults` records. Every action specifies the full next state of every top-level variable.
 
-The implementation and both channel bodies are abstracted to Boolean version bits. A finite `feedbackKind` records findings or the exact `NO_FINDINGS` sentinel. Concrete message text, the coordination-directory path, repository and context paths, path-equality validation, and filesystem calls are otherwise abstracted away. The lock and completion marker are presence-only signals and carry no data.
+The implementation and both channel bodies are abstracted to Boolean version bits. A finite `feedbackKind` records findings or the exact `NO_FINDINGS` sentinel. Concrete message text, the coordination-directory path, repository and context paths, path-equality validation, Python process lifetime, and filesystem calls are otherwise abstracted away. The lock and completion marker are presence-only signals and carry no data. A script's internal one-second poll that observes no actionable change is a stuttering step and is not modeled as a separate transition. Missing-lock recovery performed inside the implementor waiter is represented by `RetryMissingRequest`.
 
 ## Modeled behavior
 
@@ -38,6 +40,7 @@ The model covers:
 
 - cleanup from every possible combination of six stale startup files, with stale completion removed last;
 - externally ordered reviewer launch after startup cleanup;
+- logical waiting states, with idle script polls represented as stuttering and process blocking assumed rather than verified;
 - mandatory implementor context on every request, with an initial publication and later reuse or atomic refresh;
 - atomic publication for both directional channels;
 - opposite channel polarity: implementor publication while unlocked and reviewer publication while locked;
@@ -47,11 +50,11 @@ The model covers:
 - implementor read/handling followed by a separate inbound-message acknowledgement;
 - another planned implementation phase after `NO_FINDINGS` without terminating the reviewer;
 - exactly one reviewer-channel decision per logical request;
-- implementor-owned final cleanup and completion publication only after `NO_FINDINGS`;
-- completion acknowledgement by the participating reviewer and implementor observation of that acknowledgement;
+- final cleanup and completion publication through the implementor CLI only after `NO_FINDINGS`, whether the declared decision authority is the implementor or its caller;
+- completion acknowledgement by the participating reviewer and observation by the implementor-side endpoint used by the declared authority;
 - successful termination with all six files absent.
 
-The action relation assumes both agents follow the protocol. TLC checks compliant interleavings and explicitly enabled mutations; it does not establish that an LLM will obey the skill, limit protocol polling to the captured directory, or keep review activity static and read-only.
+The action relation assumes both agents and the role scripts follow the protocol. TLC checks compliant interleavings and explicitly enabled mutations; it does not establish that an LLM will invoke or keep waiting on the correct script process, limit protocol operations to the captured directory, or keep review activity static and read-only. The declared `completion-authority` is caller-versus-implementor control policy rather than file state: either authority uses the same implementor CLI transition, so the choice is abstracted from the model.
 
 ## Checked properties
 
@@ -75,7 +78,7 @@ The action relation assumes both agents follow the protocol. TLC checks complian
 | Final cleanup and shutdown are reachable only from `NO_FINDINGS` | `CompletionRequiresNoFindings` |
 | The reviewer terminates only after acknowledging completion | `ReviewerTerminatesOnlyAfterCompletion` |
 | Successful termination removes all six working files | `SuccessfulTerminationIsClean` |
-| Only the implementor publishes completion after the other five files are absent | `CompletionMarkerPublishedLast` |
+| The declared authority, through the implementor endpoint, atomically promotes the final clean response to completion after the other four files are absent | `CompletionMarkerPublishedLast` |
 | Any completion-marker removal occurs only after the other five files are absent | `CompletionMarkerRemovedLast` |
 | Only the participating reviewer acknowledges normal completion | `CompletionAcknowledgedByParticipatingReviewer` |
 | Every logical request reaches exactly one decision before closing | `ExactlyOneDecisionPerLogicalRequest` |
@@ -111,7 +114,7 @@ TLA2TOOLS_SHA256=expected-digest \
 
 The runner verifies the pinned default jar's SHA-256 digest. A custom jar is verified when `TLA2TOOLS_SHA256` is supplied; otherwise the runner warns. `TLC_METADIR` selects the state directory, and `TLC_COVERAGE=1` enables action coverage.
 
-The recorded 2026-08-26 normal run completed without errors after generating 1,399 states, finding 930 distinct states, and reaching graph depth 22. TLC checked eleven temporal-property branches. All three negative mutation checks produced their expected violations.
+The recorded 2026-08-26 normal run completed without errors after generating 1,127 states, finding 738 distinct states, and reaching graph depth 23. TLC checked eleven temporal-property branches. All three negative mutation checks produced their expected violations.
 
 Coverage confirms both lock-loss locations and retry: `LosePollingLock`, `LoseActiveReviewLock`, and `RetryMissingRequest` are reachable. Both reviewer outcomes and both implementor choices after them are reachable, as are `PublishCompletion`, `AcknowledgeCompletion`, and `ObserveCompletionAcknowledged`. `RemoveCleanupReviewerTmp` and `RemoveCleanupImplementorTmp` remain at `0:0` because compliant publication ordering makes both temp files absent before final cleanup; they remain defensive actions matching the skill's remove-if-present instructions. Arbitrary stale temp cleanup is exercised during startup.
 
@@ -121,9 +124,11 @@ The simplified protocol intentionally delegates lifecycle isolation to external 
 
 Filesystem checks and subsequent writes or removals are separate real calls but single TLA+ actions. The model therefore does not prove compare-and-act atomicity. It does exercise one bounded lock deletion while the reviewer is polling, reviewing, or publishing, and proves that retry preserves the same frozen logical request. Repeated deletions and arbitrary lock loss after a decision are not modeled.
 
-After startup, temp files are reachable only while their compliant publisher is active. Fairness lets `AbortReviewAfterLockLoss` clear a reviewer temp before retry. TLC verifies that the implementor context file exists and remains frozen; it abstracts the required absolute paths, task source or full text, evidence explanation, and implementor notes rather than interpreting their prose. It also abstracts the review itself, so it does not prove that the reviewer avoids builds, tests, execution, or writes outside the protocol files, nor that it prioritizes substantive correctness over compilation concerns. TLC is untimed and does not model the skill's three-poll timeouts for a stuck temp or an unexpected completion marker, an owner crash leaving a permanently orphaned temp, arbitrary findings text, or whether an LLM understands and correctly acts on a message it read.
+After startup, temp files are reachable only while their compliant publisher is active. Fairness lets `AbortReviewAfterLockLoss` clear a reviewer temp before retry. TLC verifies that the implementor context file exists and remains frozen; it abstracts the required absolute paths, task source or full text, evidence explanation, and implementor notes rather than interpreting their prose. It also abstracts the review itself, so it does not prove that the reviewer avoids builds, tests, execution, or writes outside the protocol files, nor that it prioritizes substantive correctness over compilation concerns. TLC is untimed and does not model the scripts' one-second poll interval, their 90-second stale-state grace period, process interruption by an execution environment, arbitrary findings text, or whether an LLM understands and correctly acts on a message it read.
 
-The model assumes the participating reviewer remains live long enough to remove the completion marker. The skill bounds the implementor's wait to three polls and otherwise leaves the marker as a durable pending-shutdown signal; that timeout branch is outside the model.
+The completion CLI retains the clean reviewer final as a durable phase record while removing the other files, empties it, and atomically renames that same filesystem entry to the completion marker. The `PublishCompletion` action models that final atomic promotion. If the process is interrupted before or after the rename, replay can distinguish the retained reviewer final, the published marker, and an already-acknowledged all-absent state. TLC verifies only this common post-authorization file transition; it does not verify who chose to close a caller-owned session or the control-plane handback itself.
+
+The model assumes the participating reviewer remains live long enough to remove the completion marker. The implementor script now waits indefinitely for that acknowledgement unless the operator or execution environment interrupts it; interruption and restart behavior are outside the model.
 
 The fault budget permits one environmental lock deletion before a reviewer decision. Early unlocks and early completion publication are enabled only by their negative configurations.
 

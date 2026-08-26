@@ -30,7 +30,7 @@ The standalone Markdown files directly under [`skills/`](skills/) capture reusab
 
 | Skill | Purpose |
 | --- | --- |
-| [`code-review-loop`](skills/code-review-loop/SKILL.md) | Coordinate an `implementor` and persistent `reviewer` through session-isolated frozen-diff cycles, `NO_FINDINGS` phase boundaries, and implementor-controlled completion; the protocol includes [TLA+ state-machine verification](skills/code-review-loop/verification/README.md). |
+| [`code-review-loop`](skills/code-review-loop/SKILL.md) | Coordinate an `implementor` and persistent `reviewer` through session-isolated frozen-diff cycles, `NO_FINDINGS` work-item boundaries, and caller- or implementor-controlled session completion; the protocol includes [TLA+ state-machine verification](skills/code-review-loop/verification/README.md). |
 
 Invoke the same skill on both agents with the appropriate role:
 
@@ -38,6 +38,8 @@ Invoke the same skill on both agents with the appropriate role:
 /code-review-loop implementor
 /code-review-loop reviewer
 ```
+
+Omitting completion authority defaults both roles to `completion-authority=implementor`. Use `completion-authority=caller` explicitly on both invocations when an enclosing workflow, such as an epic implementor, must keep the reviewer alive across multiple work items and close the session itself. Continue such a session by resuming the same initialized implementor role; a fresh implementor invocation would perform startup cleanup and must begin a new session instead.
 
 ### Git history skills
 
