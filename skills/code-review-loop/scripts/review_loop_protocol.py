@@ -198,6 +198,87 @@ def require_nonempty_channel(coordination_directory: Path, name: str) -> str:
     return body
 
 
+def write_channel_temp(coordination_directory: Path, name: str, body: str) -> None:
+    if name not in (IMPLEMENTOR_TEMP, REVIEWER_TEMP):
+        raise ProtocolError(f"refusing to write non-temp channel path: {name}")
+    if not body.strip():
+        raise ProtocolError("channel message must not be empty")
+
+    path = coordination_directory / name
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    descriptor = None
+    try:
+        descriptor = os.open(str(path), flags, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as channel:
+            descriptor = None
+            channel.write(body)
+            channel.flush()
+            os.fsync(channel.fileno())
+    except FileExistsError as exc:
+        raise ProtocolError(f"temporary channel already exists: {path}") from exc
+    except (OSError, UnicodeError) as exc:
+        raise ProtocolError(f"cannot write temporary channel {path}: {exc}") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def promote_channel(
+    coordination_directory: Path, temp_name: str, final_name: str
+) -> None:
+    allowed_pairs = {
+        (IMPLEMENTOR_TEMP, IMPLEMENTOR_FINAL),
+        (REVIEWER_TEMP, REVIEWER_FINAL),
+    }
+    if (temp_name, final_name) not in allowed_pairs:
+        raise ProtocolError(
+            f"refusing unsupported channel promotion: {temp_name} -> {final_name}"
+        )
+    temp_path = coordination_directory / temp_name
+    final_path = coordination_directory / final_name
+    if _path_kind(temp_path) != "file":
+        raise ProtocolError(f"temporary channel is absent: {temp_path}")
+    try:
+        if not temp_path.read_text(encoding="utf-8").strip():
+            raise ProtocolError(f"temporary channel must not be empty: {temp_path}")
+    except (OSError, UnicodeError) as exc:
+        raise ProtocolError(
+            f"cannot read temporary channel {temp_path}: {exc}"
+        ) from exc
+    if _path_kind(final_path) != "absent":
+        raise ProtocolError(f"final channel already exists: {final_path}")
+    try:
+        os.replace(str(temp_path), str(final_path))
+    except OSError as exc:
+        raise ProtocolError(
+            f"cannot publish channel {temp_path} -> {final_path}: {exc}"
+        ) from exc
+
+
+def load_message_input(
+    message: Optional[str],  # noqa: UP045
+    message_file: Optional[str],  # noqa: UP045
+    message_stdin: bool,
+) -> str:
+    if message is not None:
+        body = message
+    elif message_file is not None:
+        source = Path(message_file)
+        if not source.is_absolute():
+            raise ProtocolError("message file must be an absolute path")
+        try:
+            body = source.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise ProtocolError(f"cannot read message file {source}: {exc}") from exc
+    elif message_stdin:
+        body = sys.stdin.read()
+    else:
+        raise ProtocolError("message source is required")
+    if not body.strip():
+        raise ProtocolError("message must not be empty")
+    return body
+
+
 def emit(status: str, **fields: Any) -> None:
     payload = {"status": status}
     payload.update(fields)

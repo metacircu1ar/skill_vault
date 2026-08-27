@@ -135,9 +135,9 @@ Give each reviewer only:
 
 - its assignment ID, provider-valid launch name, and canonical working path;
 - the location of the sibling `code-review-loop` skill;
-- instruction to follow that skill as `reviewer`, with completion authority omitted so it defaults to `implementor`;
+- instruction to follow that skill simply as `reviewer`; reviewers have no completion-authority input;
 - instruction to treat its working path as both current directory and coordination directory;
-- instruction to learn all repository, task, evidence, and review-target context from the implementor channel rather than guessing or inspecting before a request; and
+- instruction to learn all repository, task, evidence, and review-target context from the `wait-for-request` JSON `message` rather than guessing, inspecting protocol files, or reviewing before a request; and
 - instruction to count accepted review rounds and, after `acknowledge-completion` succeeds, send its structured terminal result before exiting.
 
 Do not duplicate general or agent-specific task context in the reviewer launch prompt. This prevents the launch prompt and protocol handoff from becoming two conflicting sources of truth.

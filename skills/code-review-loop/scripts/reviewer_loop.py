@@ -1,4 +1,4 @@
-"""Blocking waits and cleanup operations owned by the reviewer role."""
+"""Complete reviewer endpoint for the code-review-loop file protocol."""
 
 from __future__ import annotations
 
@@ -19,10 +19,13 @@ from review_loop_protocol import (
     ProtocolError,
     emit,
     fail,
+    load_message_input,
+    promote_channel,
     remove_exact,
     require_nonempty_channel,
     resolve_coordination_directory,
     snapshot,
+    write_channel_temp,
 )
 
 
@@ -109,24 +112,37 @@ def wait_for_request(
         if state.reviewer_temp and state.reviewer_final:
             raise ProtocolError("reviewer temp and final coexist while lock exists")
         if state.reviewer_final:
-            require_nonempty_channel(coordination_directory, REVIEWER_FINAL)
+            request_body = require_nonempty_channel(
+                coordination_directory, IMPLEMENTOR_FINAL
+            )
+            response_body = require_nonempty_channel(
+                coordination_directory, REVIEWER_FINAL
+            )
             emit(
                 "ready",
                 event="review_ready_to_release",
                 coordination_directory=str(coordination_directory),
-                message_path=str(coordination_directory / REVIEWER_FINAL),
+                message=request_body,
+                response_kind=(
+                    "no_findings"
+                    if response_body.strip() == "NO_FINDINGS"
+                    else "findings"
+                ),
             )
             return
+        request_body = require_nonempty_channel(
+            coordination_directory, IMPLEMENTOR_FINAL
+        )
         emit(
             "ready",
             event="review_request",
             coordination_directory=str(coordination_directory),
-            message_path=str(coordination_directory / IMPLEMENTOR_FINAL),
+            message=request_body,
         )
         return
 
 
-def prepare_response(coordination_directory: Path) -> None:
+def prepare_response(coordination_directory: Path) -> list[str]:
     state = snapshot(coordination_directory)
     if not state.review_lock:
         raise ProtocolError("cannot prepare reviewer response without a review lock")
@@ -141,30 +157,10 @@ def prepare_response(coordination_directory: Path) -> None:
     after = snapshot(coordination_directory)
     if after.reviewer_temp or after.reviewer_final:
         raise ProtocolError("reviewer output cleanup did not finish")
-    emit(
-        "ready",
-        event="reviewer_output_prepared",
-        coordination_directory=str(coordination_directory),
-        removed=removed,
-    )
+    return removed
 
 
-def abort_response(coordination_directory: Path) -> None:
-    state = snapshot(coordination_directory)
-    if state.reviewer_final:
-        raise ProtocolError("cannot abort temp after reviewer final was published")
-    if state.round_complete:
-        raise ProtocolError("cannot abort reviewer temp after completion")
-    removed = remove_exact(coordination_directory, (REVIEWER_TEMP,))
-    emit(
-        "ready",
-        event="reviewer_output_aborted",
-        coordination_directory=str(coordination_directory),
-        removed=removed,
-    )
-
-
-def release_review(coordination_directory: Path) -> None:
+def release_review(coordination_directory: Path, *, emit_result: bool = True) -> bool:
     state = snapshot(coordination_directory)
     if state.round_complete:
         raise ProtocolError("cannot release review after completion")
@@ -176,21 +172,73 @@ def release_review(coordination_directory: Path) -> None:
         # Unlock is the command's durable postcondition.  Once it is absent,
         # the implementor may consume the response at any time, including
         # between this snapshot and a replay-time channel read.
-        emit(
-            "ready",
-            event="review_released",
-            coordination_directory=str(coordination_directory),
-            recovered=True,
-        )
-        return
+        if emit_result:
+            emit(
+                "ready",
+                event="review_released",
+                coordination_directory=str(coordination_directory),
+                recovered=True,
+            )
+        return True
     require_nonempty_channel(coordination_directory, IMPLEMENTOR_FINAL)
     require_nonempty_channel(coordination_directory, REVIEWER_FINAL)
     if state.review_lock:
         remove_exact(coordination_directory, (REVIEW_LOCK,))
+    if emit_result:
+        emit(
+            "ready",
+            event="review_released",
+            coordination_directory=str(coordination_directory),
+        )
+    return False
+
+
+def publish_response(coordination_directory: Path, body: str) -> None:
+    state = snapshot(coordination_directory)
+    if state.round_complete:
+        raise ProtocolError("cannot publish reviewer response after completion")
+    if state.implementor_temp:
+        raise ProtocolError("cannot respond to an unstable implementor snapshot")
+
+    if state.reviewer_final:
+        existing = require_nonempty_channel(coordination_directory, REVIEWER_FINAL)
+        if existing != body:
+            raise ProtocolError("a different reviewer response is already published")
+        release_review(coordination_directory, emit_result=False)
+        emit(
+            "ready",
+            event="response_published",
+            coordination_directory=str(coordination_directory),
+            recovered=True,
+        )
+        return
+
+    if not state.review_lock:
+        if state.reviewer_temp:
+            remove_exact(coordination_directory, (REVIEWER_TEMP,))
+        raise ProtocolError("cannot publish reviewer response without a review lock")
+
+    removed = prepare_response(coordination_directory)
+    write_channel_temp(coordination_directory, REVIEWER_TEMP, body)
+    before_promotion = snapshot(coordination_directory)
+    if not before_promotion.review_lock:
+        remove_exact(coordination_directory, (REVIEWER_TEMP,))
+        emit(
+            "ready",
+            event="response_aborted",
+            coordination_directory=str(coordination_directory),
+        )
+        return
+    if before_promotion.implementor_temp or before_promotion.reviewer_final:
+        raise ProtocolError("protocol state changed during response publication")
+    require_nonempty_channel(coordination_directory, IMPLEMENTOR_FINAL)
+    promote_channel(coordination_directory, REVIEWER_TEMP, REVIEWER_FINAL)
+    release_review(coordination_directory, emit_result=False)
     emit(
         "ready",
-        event="review_released",
+        event="response_published",
         coordination_directory=str(coordination_directory),
+        removed=removed,
     )
 
 
@@ -226,9 +274,16 @@ def _add_coordination_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--coordination-dir", required=True)
 
 
+def _add_message_arguments(parser: argparse.ArgumentParser) -> None:
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--message")
+    source.add_argument("--message-file")
+    source.add_argument("--message-stdin", action="store_true")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = ProtocolArgumentParser(
-        description="Reviewer-owned waits and cleanup for code-review-loop."
+        description="Reviewer-side protocol operations for code-review-loop."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -238,11 +293,9 @@ def build_parser() -> argparse.ArgumentParser:
     participation.add_argument("--fresh", action="store_true")
     participation.add_argument("--participated", action="store_true")
 
-    prepare_parser = subparsers.add_parser("prepare-response")
-    _add_coordination_argument(prepare_parser)
-
-    abort_parser = subparsers.add_parser("abort-response")
-    _add_coordination_argument(abort_parser)
+    publish_parser = subparsers.add_parser("publish-response")
+    _add_coordination_argument(publish_parser)
+    _add_message_arguments(publish_parser)
 
     release_parser = subparsers.add_parser("release-review")
     _add_coordination_argument(release_parser)
@@ -261,10 +314,11 @@ def main() -> int:
         coordination_directory = resolve_coordination_directory(args.coordination_dir)
         if args.command == "wait-for-request":
             wait_for_request(coordination_directory, participated=args.participated)
-        elif args.command == "prepare-response":
-            prepare_response(coordination_directory)
-        elif args.command == "abort-response":
-            abort_response(coordination_directory)
+        elif args.command == "publish-response":
+            publish_response(
+                coordination_directory,
+                load_message_input(args.message, args.message_file, args.message_stdin),
+            )
         elif args.command == "release-review":
             release_review(coordination_directory)
         elif args.command == "acknowledge-completion":

@@ -73,13 +73,84 @@ class ReviewLoopScriptTests(unittest.TestCase):
         script = Path(__file__).resolve().parent / script_name
         return subprocess.Popen(
             [sys.executable, str(script), *arguments],
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
 
+    def run_cli(
+        self,
+        script_name: str,
+        *arguments: str,
+        input_text: Optional[str] = None,  # noqa: UP045
+    ) -> dict[str, object]:
+        script = Path(__file__).resolve().parent / script_name
+        completed = subprocess.run(
+            [sys.executable, str(script), *arguments],
+            input=input_text,
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return json.loads(completed.stdout)
+
     def test_poll_interval_is_one_second(self) -> None:
         self.assertEqual(POLL_INTERVAL_SECONDS, 1.0)
+
+    def test_public_clis_cover_a_clean_round_without_manual_file_operations(
+        self,
+    ) -> None:
+        common = ("--coordination-dir", str(self.coordination_directory))
+
+        self.assertEqual(
+            self.run_cli("implementor_loop.py", "startup-cleanup", *common)["event"],
+            "startup_cleanup_complete",
+        )
+        self.assertEqual(
+            self.run_cli(
+                "implementor_loop.py",
+                "publish-context",
+                *common,
+                "--message-stdin",
+                input_text="complete context",
+            )["event"],
+            "context_published",
+        )
+        self.run_cli("implementor_loop.py", "request-review", *common)
+        request = self.run_cli(
+            "reviewer_loop.py", "wait-for-request", *common, "--fresh"
+        )
+        self.assertEqual(request["message"], "complete context")
+        self.run_cli(
+            "reviewer_loop.py",
+            "publish-response",
+            *common,
+            "--message-stdin",
+            input_text="NO_FINDINGS",
+        )
+        result = self.run_cli("implementor_loop.py", "wait-for-review", *common)
+        self.assertEqual(result["message"], "NO_FINDINGS")
+        self.run_cli("implementor_loop.py", "complete", *common)
+        self.assertEqual(
+            self.run_cli(
+                "reviewer_loop.py",
+                "wait-for-request",
+                *common,
+                "--participated",
+            )["event"],
+            "completion",
+        )
+        self.run_cli(
+            "reviewer_loop.py",
+            "acknowledge-completion",
+            *common,
+            "--participated",
+        )
+        self.run_cli("implementor_loop.py", "wait-for-completion", *common)
+        self.assertEqual(snapshot(self.coordination_directory).present_names(), [])
 
     def test_startup_cleanup_removes_only_protocol_files(self) -> None:
         for name in PROTOCOL_FILES:
@@ -154,21 +225,70 @@ class ReviewLoopScriptTests(unittest.TestCase):
         )
         self.assertEqual(reviewer_final.read_text(encoding="utf-8"), "NO_FINDINGS")
 
+    def test_publish_context_atomically_replaces_implementor_output(self) -> None:
+        self.write(IMPLEMENTOR_FINAL, "old context")
+
+        implementor_loop.publish_context(self.coordination_directory, "new context")
+
+        state = snapshot(self.coordination_directory)
+        self.assertFalse(state.implementor_temp)
+        self.assertTrue(state.implementor_final)
+        self.assertEqual(
+            (self.coordination_directory / IMPLEMENTOR_FINAL).read_text(
+                encoding="utf-8"
+            ),
+            "new context",
+        )
+
+    def test_publish_context_cli_accepts_stdin_without_exposing_a_path(self) -> None:
+        process = self.start_cli(
+            "implementor_loop.py",
+            "publish-context",
+            "--coordination-dir",
+            str(self.coordination_directory),
+            "--message-stdin",
+        )
+        stdout, stderr = process.communicate(input="complete context", timeout=3)
+
+        self.assertEqual(process.returncode, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertEqual(payload["event"], "context_published")
+        self.assertNotIn("message_path", payload)
+        self.assertEqual(
+            (self.coordination_directory / IMPLEMENTOR_FINAL).read_text(
+                encoding="utf-8"
+            ),
+            "complete context",
+        )
+
+    def test_request_review_creates_lock_and_is_replay_safe(self) -> None:
+        self.write(IMPLEMENTOR_FINAL, "context")
+
+        implementor_loop.request_review(self.coordination_directory)
+        implementor_loop.request_review(self.coordination_directory)
+
+        state = snapshot(self.coordination_directory)
+        self.assertTrue(state.review_lock)
+        self.assertTrue(state.implementor_final)
+
     def test_implementor_wait_stays_blocked_until_review_result(self) -> None:
         self.write(IMPLEMENTOR_FINAL, "context")
         lock = self.write(REVIEW_LOCK)
-        call = BackgroundCall(
-            lambda: implementor_loop.wait_for_review(
-                self.coordination_directory, poll_interval=0.01
+        with mock.patch.object(implementor_loop, "emit") as emit_mock:
+            call = BackgroundCall(
+                lambda: implementor_loop.wait_for_review(
+                    self.coordination_directory, poll_interval=0.01
+                )
             )
-        )
 
-        time.sleep(0.04)
-        call.assert_running(self)
-        self.write(REVIEWER_FINAL, "finding")
-        lock.unlink()
+            time.sleep(0.04)
+            call.assert_running(self)
+            emit_mock.assert_not_called()
+            self.write(REVIEWER_FINAL, "finding")
+            lock.unlink()
 
-        call.join_cleanly(self)
+            call.join_cleanly(self)
+            self.assertEqual(emit_mock.call_count, 1)
 
     def test_implementor_cli_process_blocks_until_review_result(self) -> None:
         self.write(IMPLEMENTOR_FINAL, "context")
@@ -193,7 +313,11 @@ class ReviewLoopScriptTests(unittest.TestCase):
                 process.wait(timeout=2)
 
         self.assertEqual(process.returncode, 0, stderr)
-        self.assertEqual(json.loads(stdout)["event"], "review_result")
+        payload = json.loads(stdout)
+        self.assertEqual(payload["event"], "review_result")
+        self.assertEqual(payload["message"], "NO_FINDINGS")
+        self.assertEqual(payload["result_kind"], "no_findings")
+        self.assertNotIn("message_path", payload)
 
     def test_implementor_wait_recreates_a_missing_lock(self) -> None:
         self.write(IMPLEMENTOR_FINAL, "context")
@@ -215,20 +339,23 @@ class ReviewLoopScriptTests(unittest.TestCase):
         call.join_cleanly(self)
 
     def test_reviewer_wait_stays_blocked_until_valid_request(self) -> None:
-        call = BackgroundCall(
-            lambda: reviewer_loop.wait_for_request(
-                self.coordination_directory,
-                participated=False,
-                poll_interval=0.01,
+        with mock.patch.object(reviewer_loop, "emit") as emit_mock:
+            call = BackgroundCall(
+                lambda: reviewer_loop.wait_for_request(
+                    self.coordination_directory,
+                    participated=False,
+                    poll_interval=0.01,
+                )
             )
-        )
 
-        time.sleep(0.04)
-        call.assert_running(self)
-        self.write(IMPLEMENTOR_FINAL, "context")
-        self.write(REVIEW_LOCK)
+            time.sleep(0.04)
+            call.assert_running(self)
+            emit_mock.assert_not_called()
+            self.write(IMPLEMENTOR_FINAL, "context")
+            self.write(REVIEW_LOCK)
 
-        call.join_cleanly(self)
+            call.join_cleanly(self)
+            self.assertEqual(emit_mock.call_count, 1)
 
     def test_reviewer_cli_process_blocks_until_request(self) -> None:
         process = self.start_cli(
@@ -252,7 +379,10 @@ class ReviewLoopScriptTests(unittest.TestCase):
                 process.wait(timeout=2)
 
         self.assertEqual(process.returncode, 0, stderr)
-        self.assertEqual(json.loads(stdout)["event"], "review_request")
+        payload = json.loads(stdout)
+        self.assertEqual(payload["event"], "review_request")
+        self.assertEqual(payload["message"], "context")
+        self.assertNotIn("message_path", payload)
 
     def test_participating_reviewer_observes_completion(self) -> None:
         self.write(ROUND_COMPLETE)
@@ -357,16 +487,65 @@ class ReviewLoopScriptTests(unittest.TestCase):
 
         self.assertFalse(snapshot(self.coordination_directory).reviewer_temp)
 
-    def test_abort_response_cleans_temp_after_lock_is_recreated(self) -> None:
+    def test_publish_response_aborts_temp_if_lock_disappears(self) -> None:
+        self.write(IMPLEMENTOR_FINAL, "context")
+        lock = self.write(REVIEW_LOCK)
+        real_write = reviewer_loop.write_channel_temp
+
+        def write_then_lose_lock(*args, **kwargs) -> None:
+            real_write(*args, **kwargs)
+            lock.unlink()
+
+        with (
+            mock.patch.object(
+                reviewer_loop, "write_channel_temp", side_effect=write_then_lose_lock
+            ),
+            mock.patch.object(reviewer_loop, "emit") as emit_mock,
+        ):
+            reviewer_loop.publish_response(self.coordination_directory, "finding")
+
+        self.assertFalse(snapshot(self.coordination_directory).reviewer_temp)
+        self.assertFalse(snapshot(self.coordination_directory).reviewer_final)
+        self.assertEqual(emit_mock.call_args.kwargs["event"], "response_aborted")
+
+    def test_publish_response_atomically_publishes_before_unlock(self) -> None:
         self.write(IMPLEMENTOR_FINAL, "context")
         self.write(REVIEW_LOCK)
-        self.write(REVIEWER_TEMP, "partial")
 
-        reviewer_loop.abort_response(self.coordination_directory)
+        reviewer_loop.publish_response(self.coordination_directory, "finding")
 
         state = snapshot(self.coordination_directory)
-        self.assertTrue(state.review_lock)
+        self.assertFalse(state.review_lock)
         self.assertFalse(state.reviewer_temp)
+        self.assertTrue(state.reviewer_final)
+        self.assertEqual(
+            (self.coordination_directory / REVIEWER_FINAL).read_text(encoding="utf-8"),
+            "finding",
+        )
+
+    def test_publish_response_rejects_a_missing_request(self) -> None:
+        self.write(IMPLEMENTOR_FINAL, "context")
+
+        with self.assertRaisesRegex(ProtocolError, "without a review lock"):
+            reviewer_loop.publish_response(self.coordination_directory, "finding")
+
+    def test_publish_response_cli_accepts_stdin(self) -> None:
+        self.write(IMPLEMENTOR_FINAL, "context")
+        self.write(REVIEW_LOCK)
+        process = self.start_cli(
+            "reviewer_loop.py",
+            "publish-response",
+            "--coordination-dir",
+            str(self.coordination_directory),
+            "--message-stdin",
+        )
+        stdout, stderr = process.communicate(input="NO_FINDINGS", timeout=3)
+
+        self.assertEqual(process.returncode, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertEqual(payload["event"], "response_published")
+        self.assertNotIn("message_path", payload)
+        self.assertFalse(snapshot(self.coordination_directory).review_lock)
 
     def test_release_review_publishes_before_unlock(self) -> None:
         self.write(IMPLEMENTOR_FINAL, "context")

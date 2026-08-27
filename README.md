@@ -44,7 +44,7 @@ For one pair, invoke `code-review-loop` on both agents with the appropriate role
 /code-review-loop reviewer
 ```
 
-Omitting completion authority defaults both roles to `completion-authority=implementor`. Use `completion-authority=caller` explicitly on both invocations when an enclosing workflow, such as an epic implementor, must keep the reviewer alive across multiple work items and close the session itself. Continue such a session by resuming the same initialized implementor role; a fresh implementor invocation would perform startup cleanup and must begin a new session instead.
+Omitting completion authority on the implementor defaults it to `completion-authority=implementor`. The reviewer has no completion-authority input. Use `completion-authority=caller` only on the implementor when an enclosing workflow, such as an epic implementor, must keep the reviewer alive across multiple work items and close the session itself. Continue such a session by resuming the same initialized implementor role; a fresh implementor invocation would perform startup cleanup and must begin a new session instead.
 
 For multiple independent repositories, invoke `parallel-code-review-loop` on one orchestrator with its input manifest. The orchestrator validates disjoint repository roots and complete-pair capacity, then launches one `code-review-loop` implementor/reviewer pair per repository. Install the complete directories for both coordination skills because the parallel wrapper depends on the base protocol and its scripts.
 

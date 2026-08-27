@@ -2,7 +2,7 @@
 
 This directory contains the TLA+ state machine and reproducible TLC checks for the review protocol coordinated through one fixed shared directory.
 
-The skill package's [implementor CLI](../scripts/implementor_loop.py) and [reviewer CLI](../scripts/reviewer_loop.py) are the concrete wait and cleanup implementation. Their blocking wait commands inspect protocol state once per second and remain silent until an actionable state or protocol error occurs.
+The skill package's [implementor CLI](../scripts/implementor_loop.py) and [reviewer CLI](../scripts/reviewer_loop.py) are the complete concrete protocol endpoints: they own channel publication and receipt, lock transitions, waits, acknowledgement, recovery, and cleanup. Their blocking wait commands inspect protocol state once per second and remain silent until an actionable state or protocol error occurs; role agents do not inspect the files directly.
 
 ## Files
 
@@ -54,7 +54,7 @@ The model covers:
 - completion acknowledgement by the participating reviewer and observation by the implementor-side endpoint used by the declared authority;
 - successful termination with all six files absent.
 
-The action relation assumes both agents and the role scripts follow the protocol. TLC checks compliant interleavings and explicitly enabled mutations; it does not establish that an LLM will invoke or keep waiting on the correct script process, limit protocol operations to the captured directory, or keep review activity static and read-only. The declared `completion-authority` is caller-versus-implementor control policy rather than file state: either authority uses the same implementor CLI transition, so the choice is abstracted from the model.
+The action relation assumes both agents and the role scripts follow the protocol. TLC checks compliant interleavings and explicitly enabled mutations; it does not establish that an LLM will invoke or keep waiting on the correct script process, limit protocol operations to the captured directory, or keep review activity static and read-only. The implementor's `completion-authority` is caller-versus-implementor control policy rather than file state: either authority uses the same implementor CLI transition, so the choice is abstracted from the model and is not an input to the reviewer.
 
 ## Checked properties
 
